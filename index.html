@@ -1838,7 +1838,7 @@ canvas.addEventListener("pointerup", (ev) => {
 });
 canvas.tabIndex = 0;
 canvas.setAttribute("aria-label", "3D 장면. W A S D로 기사 이동, E로 상호작용");
-const typing = (el) => el && ((el.tagName === "INPUT" && el.type === "text") || el.tagName === "TEXTAREA");
+const typing = (el) => el && (/^(INPUT|TEXTAREA|SELECT)$/.test(el.tagName) || el.isContentEditable || !!el.closest?.("#app:not([hidden]), .qr-full")); // never steal keys from a form or the training app
 const MOVE = ["KeyW", "KeyA", "KeyS", "KeyD", "ShiftLeft", "ShiftRight"];
 const jump = { h: 0, v: 0 };
 function nearest() {
