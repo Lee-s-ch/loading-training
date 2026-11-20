@@ -124,12 +124,14 @@ async function showHome() {
     <div class="menu">
       <button class="big primary" id="goTrain" type="button">교육 받기<small>순서를 하나씩 배웁니다</small></button>
       <button class="big primary alt" id="goExam" type="button">시험 보기<small>${PASS}점 이상 합격</small></button>
+      <button class="big ghost" id="goFree" type="button">자유 시뮬레이터<small>기록 없이 마음대로 조작해 봅니다</small></button>
       <button class="big ghost" id="goRec" type="button">내 기록 보기</button>
     </div>
     <div class="row-end"><label class="check"><input type="checkbox" id="voice" ${voiceOn ? "checked" : ""}> 음성 안내</label><button class="link" id="out" type="button">로그아웃</button></div>`);
   $a("#goTrain").onclick = () => runSession("training");
   $a("#goExam").onclick = () => runSession("exam");
   $a("#goRec").onclick = showMyRecords;
+  $a("#goFree").onclick = openFree;
   $a("#out").onclick = logout;
   $a("#voice").onchange = (e) => { voiceOn = e.target.checked; store.set("edu-voice", voiceOn ? "1" : "0"); };
   try {
@@ -255,11 +257,18 @@ async function showAdmin() {
   $a("#out").onclick = () => { app.classList.remove("wide"); logout(); };
   $a("#qrBtn").onclick = showQR;
   $a("#allXls").onclick = exportAll;
-  $a("#simBtn").onclick = () => { app.hidden = true; backBtn.hidden = false; document.querySelector("#stage")?.append(backBtn); window.dispatchEvent(new Event("resize")); };
+  $a("#simBtn").onclick = () => { app.hidden = true; backBtn.textContent = "관리자 화면으로"; backBtn.hidden = false; document.querySelector("#stage")?.append(backBtn); window.dispatchEvent(new Event("resize")); };
   app.querySelectorAll("[data-tab]").forEach((b) => (b.onclick = () => { tab = b.dataset.tab; renderTab(); }));
   await loadDrivers();
 }
-backBtn.onclick = () => { backBtn.hidden = true; app.hidden = false; };
+backBtn.onclick = () => { backBtn.hidden = true; app.hidden = false; free = false; poke(); };
+let free = false;
+async function openFree() {
+  const SIM = await waitSim(); free = true;
+  SIM.setAuto(false); SIM.resetScene(modeOf(me.fuel)); SIM.goView("follow");
+  app.hidden = true; backBtn.textContent = "처음 화면으로"; backBtn.hidden = false; document.querySelector("#stage")?.append(backBtn);
+  window.dispatchEvent(new Event("resize"));
+}
 async function loadDrivers() {
   try { drivers = (await rpc("admin_drivers", { p_token: token })).filter((d) => d.role !== "admin"); renderTab(); }
   catch (e) { if (e.message === "session_expired") return logout(); msg(errText(e)); }
@@ -374,7 +383,7 @@ async function showQR() {
 let idleT = 0;
 function poke() {
   clearTimeout(idleT);
-  if (token && !session) idleT = setTimeout(() => { if (token && !session) { app.classList.remove("wide"); logout().then(() => msg("한동안 사용이 없어 로그아웃했습니다.")); } }, (me?.role === "admin" ? 30 : 5) * 60000);
+  if (token && !session) idleT = setTimeout(() => { if (token && !session && !free) { app.classList.remove("wide"); logout().then(() => msg("한동안 사용이 없어 로그아웃했습니다.")); } }, (me?.role === "admin" ? 30 : 5) * 60000);
 }
 for (const ev of ["pointerdown", "keydown"]) addEventListener(ev, poke, { passive: true });
 
