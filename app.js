@@ -67,6 +67,8 @@ function showLogin(note = "") {
     ev.preventDefault(); const b = ev.submitter; busyBtn(b, true);
     try {
       const r = await rpc("login", { p_plate: $a("#lp").value, p_pw: $a("#lw").value });
+      if (r.status === "bad_login" || r.status === "locked") return msg(ERR[r.status]);
+      if (r.status !== "approved" && r.status !== "pending" && r.status !== "rejected") return msg(ERR.bad_login);
       if (r.status === "pending") return msg("가입 신청을 받았습니다. 관리자 승인을 기다려 주세요.");
       if (r.status === "rejected") return msg("가입이 반려되었습니다. 출하장 사무실에 문의하세요.");
       token = r.token; sess.set("edu-token", token); me = r; route();
@@ -112,7 +114,7 @@ function showSignup() {
     } catch (e) { msg(errText(e)); } finally { busyBtn(b, false); }
   };
 }
-async function logout() { try { if (token) await rpc("logout", { p_token: token }); } catch {} token = null; me = null; sess.set("edu-token", null); showLogin(); }
+async function logout() { const t = token; token = null; me = null; sess.set("edu-token", null); showLogin(); try { if (t) await rpc("logout", { p_token: t }); } catch {} }
 
 // ---------- driver home and records ----------
 async function showHome() {
@@ -147,7 +149,7 @@ function recordRows(list) {
   return `<div class="table-wrap"><table><thead><tr><th>날짜</th><th>구분</th><th>점수</th><th>결과</th><th>틀린 단계</th></tr></thead><tbody>${list.map((a) => `
     <tr><td>${esc(when(a.at))}</td><td>${a.kind === "exam" ? "시험" : "교육"}</td><td class="num">${a.score ?? "-"}</td>
     <td>${a.kind === "exam" ? (a.passed ? '<span class="pill pass">합격</span>' : '<span class="pill fail">불합격</span>') : "이수"}</td>
-    <td>${esc((a.mistakes || []).join(", ")) || "-"}</td></tr>`).join("")}</tbody></table></div>`;
+    <td>${esc((Array.isArray(a.mistakes) ? a.mistakes : []).join(", ")) || "-"}</td></tr>`).join("")}</tbody></table></div>`;
 }
 async function showMyRecords() {
   screen(`<h1>내 기록</h1><div id="rec">불러오는 중…</div><button class="big ghost" id="home" type="button">처음 화면으로</button>`);
@@ -269,7 +271,10 @@ async function openFree() {
   app.hidden = true; backBtn.textContent = "처음 화면으로"; backBtn.hidden = false; document.querySelector("#stage")?.append(backBtn);
   window.dispatchEvent(new Event("resize"));
 }
+let adminTimer = 0;
 async function loadDrivers() {
+  clearInterval(adminTimer);
+  adminTimer = setInterval(() => { if (!app.hidden && app.classList.contains("wide") && tab !== "history" && !document.querySelector("#tabBody form")) loadDrivers(); }, 15000);
   try { drivers = (await rpc("admin_drivers", { p_token: token })).filter((d) => d.role !== "admin"); renderTab(); }
   catch (e) { if (e.message === "session_expired") return logout(); msg(errText(e)); }
 }
@@ -314,7 +319,7 @@ async function act(kind, id, btn) {
     if (kind === "history") {
       const list = await rpc("admin_attempts", { p_token: token, p_driver: id });
       $a("#tabBody").innerHTML = `<div class="bar"><b>${esc(d.plate)} · ${esc(d.name)} (${esc(d.company)})</b><span class="grow"></span><button class="btn" id="backList" type="button">목록으로</button></div>${recordRows(list)}`;
-      $a("#backList").onclick = renderTab; return;
+      tab = "history"; $a("#backList").onclick = () => { tab = "all"; renderTab(); }; return;
     }
     if (kind === "pw") {
       const row = btn.closest("td");
@@ -361,7 +366,7 @@ async function exportAll() { // backup of every training and exam record
   try {
     const list = await rpc("admin_all_attempts", { p_token: token }), X = await lib(XLSX_LIB, "XLSX");
     const rows = list.map((a) => ({ 일시: when(a.at), 차량번호: a.plate, 성명: a.name, 소속: a.company, 유종: a.fuel, 구분: a.kind === "exam" ? "시험" : "교육",
-      점수: a.score ?? "", 결과: a.kind === "exam" ? (a.passed ? "합격" : "불합격") : "이수", "틀린 단계": (a.mistakes || []).join(", ") }));
+      점수: a.score ?? "", 결과: a.kind === "exam" ? (a.passed ? "합격" : "불합격") : "이수", "틀린 단계": (Array.isArray(a.mistakes) ? a.mistakes : []).join(", ") }));
     const ws = X.utils.json_to_sheet(rows); ws["!cols"] = [18, 12, 10, 16, 8, 6, 6, 8, 40].map((w) => ({ wch: w }));
     const wb = X.utils.book_new(); X.utils.book_append_sheet(wb, ws, "전체 기록"); X.writeFile(wb, `교육기록_전체_${stamp()}.xlsx`);
     msg(`기록 ${rows.length}건을 받았습니다.`, true);
