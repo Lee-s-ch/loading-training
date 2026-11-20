@@ -1172,7 +1172,7 @@ function stepAction(dt) {
     if (act.face) { act.from = driver.rotation.y; let d = angleTo(act.face) - act.from; d = Math.atan2(Math.sin(d), Math.cos(d)); act.to = act.from + d; look.target = act.face.clone(); }
     if (act.walk) look.target = null;
   }
-  const speedUp = reduceMotion ? 50 : 1;
+  const speedUp = 1; // the driver's movements are the lesson: they play at normal speed even with "reduce motion" (only camera sway and cuts change)
   act.t += dt * speedUp;
   if (act.walk) {
     const d = act.walk.clone().sub(driver.position), dist = d.length(), step = act.speed * dt * speedUp;
@@ -2432,13 +2432,13 @@ function frame(nowMs) {
   updateDrive(dt);
   moveDriver(dt);
   poseDriver(dt);
-  for (const t of Object.values(T)) { const to = t.on ? 1 : 0; t.k = reduceMotion ? to : Math.max(0, Math.min(1, t.k + Math.sign(to - t.k) * dt / 0.7)); }
+  for (const t of Object.values(T)) { const to = t.on ? 1 : 0; t.k = Math.max(0, Math.min(1, t.k + Math.sign(to - t.k) * dt / 0.7)); }
   chock.position.copy(posOf(T.chock));
   driver.updateMatrixWorld(true);
   updatePlug(); updateArm(); if (mode === "bottom") updateVapor();
   updateBand(); updateLanyard(); checkBreakaway(); checkLever(); updatePrompt(); updateCharge(dt); updateFx(dt); updateAim();
   if (state.loading && !state.paused) {
-    state.progress = Math.min(1, state.progress + dt / (reduceMotion ? 4 : 16));
+    state.progress = Math.min(1, state.progress + dt / 16);
     if (state.progress >= 1) stopLoad("정량 도달: 출하 종료", "g");
   }
   const qStep = Math.floor(state.progress * 80);

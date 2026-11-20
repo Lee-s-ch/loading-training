@@ -167,7 +167,7 @@ quitBtn.onclick = () => {
   if (session) session.quit = true; session?.wake?.();
 };
 const shuffle = (a) => { for (let i = a.length - 1; i > 0; i--) { const j = (Math.random() * (i + 1)) | 0; [a[i], a[j]] = [a[j], a[i]]; } return a; };
-function card(html) { coach.innerHTML = html; }
+function card(html, slim = false) { coach.innerHTML = html; coach.classList.toggle("slim", slim); } // slim: a one-line strip while the driver works, so the scene stays visible
 function choose(buttons) { // resolve with the pressed button's value, or "quit"
   return new Promise((res) => {
     session.wake = () => res("quit");
@@ -211,7 +211,7 @@ async function runSession(kind) {
     }
     if (session.quit) break;
     if (first) firstTry++;
-    card(`${head}<h2>${esc(steps[i].t)}</h2><p class="working">작업하는 중입니다…</p>`);
+    card(`<p class="working">작업 중 ${i + 1}/${steps.length} · ${esc(steps[i].t)}</p>`, true);
     await perform(SIM, i);
     if (!session.quit) doneSteps = i + 1;
   }

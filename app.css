@@ -105,6 +105,8 @@ body.easy canvas { pointer-events: none; }
 #coach summary { cursor: pointer; font-weight: 700; padding: 4px 0; }
 #coach ul { margin: 6px 0 0; padding-left: 20px; display: flex; flex-direction: column; gap: 6px; }
 #coach .working { color: var(--e-accent); font-weight: 700; }
+#coach.slim { padding: 10px 14px; max-height: none; box-shadow: 0 3px 12px rgb(0 0 0 / .2); }
+#coach.slim .working { font-size: 16px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 #quit, #backAdmin { position: absolute; top: max(10px, env(safe-area-inset-top, 0px)); left: max(10px, env(safe-area-inset-left, 0px)); z-index: 21;
   font: 700 17px var(--e-font); padding: 10px 16px; border-radius: 10px; border: 1px solid var(--e-line); background: var(--e-sheet); color: var(--e-ink); cursor: pointer; }
 #backAdmin { left: auto; right: max(10px, env(safe-area-inset-right, 0px)); top: auto; bottom: max(10px, env(safe-area-inset-bottom, 0px)); }
