@@ -5,7 +5,7 @@ const API = "https://tjtbylpuvoqfzmfmsxvi.supabase.co/rest/v1/rpc/";
 const KEY = "sb_publishable_7UniGhMJeSWPInc4EYsz8g_j8wZJc2j"; // publishable key: safe in the page, every function checks the session itself
 const PASS = 70;
 const ERR = {
-  bad_login: "차량번호 또는 비밀번호가 맞지 않습니다.", locked: "비밀번호를 5번 틀려 10분 동안 잠겼습니다. 잠시 뒤 다시 하세요.",
+  bad_login: "차량번호 또는 비밀번호가 맞지 않습니다. 비밀번호를 잊었으면 출하장 사무실(관리자)에 초기화를 요청하세요.", locked: "비밀번호를 5번 틀려 10분 동안 잠겼습니다. 잠시 뒤 다시 하세요.",
   plate_taken: "이미 가입된 차량번호입니다. 로그인하세요.", bad_plate: "차량번호를 정확히 입력하세요. (예: 12가3456)",
   bad_password: "비밀번호는 4자 이상으로 정하세요.", bad_name: "성명을 입력하세요.", bad_company: "소속 운송사를 입력하세요.",
   consent_required: "개인정보 수집에 동의해야 가입할 수 있습니다.", session_expired: "다시 로그인하세요.",
@@ -27,13 +27,15 @@ const when = (iso) => (iso ? new Date(iso).toLocaleString("ko-KR", { timeZone: "
 const modeOf = (fuel) => (fuel === "휘발유" ? "bottom" : "top");
 const modeName = (fuel) => (fuel === "휘발유" ? "하부 출하 (휘발유)" : `상부 출하 (${fuel})`);
 const store = { get(k) { try { return localStorage.getItem(k); } catch { return null; } }, set(k, v) { try { v == null ? localStorage.removeItem(k) : localStorage.setItem(k, v); } catch {} } };
+// the login lives only in this tab: on a shared PC or tablet, closing the tab logs out (sessionStorage)
+const sess = { get(k) { try { return sessionStorage.getItem(k); } catch { return null; } }, set(k, v) { try { v == null ? sessionStorage.removeItem(k) : sessionStorage.setItem(k, v); } catch {} } };
 
 // ---------- shell ----------
 const app = document.createElement("div"); app.id = "app"; document.body.append(app);
 const coach = document.createElement("div"); coach.id = "coach"; coach.hidden = true;
 const quitBtn = document.createElement("button"); quitBtn.id = "quit"; quitBtn.type = "button"; quitBtn.textContent = "그만하기"; quitBtn.hidden = true;
 const backBtn = document.createElement("button"); backBtn.id = "backAdmin"; backBtn.type = "button"; backBtn.textContent = "관리자 화면으로"; backBtn.hidden = true;
-let me = null, token = store.get("edu-token");
+let me = null, token = sess.get("edu-token");
 function screen(html) { app.hidden = false; app.innerHTML = `<div class="sheet">${html}</div>`; app.scrollTop = 0; return app; }
 const $a = (sel) => app.querySelector(sel);
 function msg(text, ok = false) { const m = $a(".msg"); if (m) { m.textContent = text; m.classList.toggle("ok", ok); } }
@@ -67,7 +69,7 @@ function showLogin(note = "") {
       const r = await rpc("login", { p_plate: $a("#lp").value, p_pw: $a("#lw").value });
       if (r.status === "pending") return msg("가입 신청을 받았습니다. 관리자 승인을 기다려 주세요.");
       if (r.status === "rejected") return msg("가입이 반려되었습니다. 출하장 사무실에 문의하세요.");
-      token = r.token; store.set("edu-token", token); me = r; route();
+      token = r.token; sess.set("edu-token", token); me = r; route();
     } catch (e) { msg(errText(e)); } finally { busyBtn(b, false); }
   };
 }
@@ -110,7 +112,7 @@ function showSignup() {
     } catch (e) { msg(errText(e)); } finally { busyBtn(b, false); }
   };
 }
-async function logout() { try { if (token) await rpc("logout", { p_token: token }); } catch {} token = null; me = null; store.set("edu-token", null); showLogin(); }
+async function logout() { try { if (token) await rpc("logout", { p_token: token }); } catch {} token = null; me = null; sess.set("edu-token", null); showLogin(); }
 
 // ---------- driver home and records ----------
 async function showHome() {
@@ -155,7 +157,11 @@ async function showMyRecords() {
 let session = null;
 function enterSim() { document.body.classList.add("easy"); app.hidden = true; coach.hidden = false; quitBtn.hidden = false; document.querySelector("#stage")?.append(coach, quitBtn); window.dispatchEvent(new Event("resize")); }
 function leaveSim() { document.body.classList.remove("easy"); coach.hidden = true; quitBtn.hidden = true; try { speechSynthesis.cancel(); } catch {} window.dispatchEvent(new Event("resize")); }
-quitBtn.onclick = () => { if (session) session.quit = true; session?.wake?.(); };
+quitBtn.onclick = () => {
+  if (session?.kind === "exam" && quitBtn.dataset.sure !== "1") { quitBtn.dataset.sure = "1"; quitBtn.textContent = "중단하면 0점 기록 · 한 번 더 누르기"; setTimeout(() => { quitBtn.dataset.sure = ""; quitBtn.textContent = "그만하기"; }, 4000); return; }
+  quitBtn.dataset.sure = ""; quitBtn.textContent = "그만하기";
+  if (session) session.quit = true; session?.wake?.();
+};
 const shuffle = (a) => { for (let i = a.length - 1; i > 0; i--) { const j = (Math.random() * (i + 1)) | 0; [a[i], a[j]] = [a[j], a[i]]; } return a; };
 function card(html) { coach.innerHTML = html; }
 function choose(buttons) { // resolve with the pressed button's value, or "quit"
@@ -174,7 +180,7 @@ async function runSession(kind) {
   const SIM = await waitSim(), m = modeOf(me.fuel), Q = QUESTIONS[m];
   session = { kind, quit: false };
   enterSim(); SIM.setAuto(false); SIM.resetScene(m); SIM.goView("follow");
-  const steps = SIM.STEPS[m], mistakes = []; let firstTry = 0;
+  const steps = SIM.STEPS[m], mistakes = []; let firstTry = 0, doneSteps = 0;
   for (let i = 0; i < steps.length && !session.quit; i++) {
     const head = `<p class="step-no">${i + 1} / ${steps.length} 단계 · ${kind === "exam" ? "시험" : "교육"}</p>`;
     let first = true;
@@ -203,14 +209,18 @@ async function runSession(kind) {
     if (first) firstTry++;
     card(`${head}<h2>${esc(steps[i].t)}</h2><p class="working">작업하는 중입니다…</p>`);
     await perform(SIM, i);
+    if (!session.quit) doneSteps = i + 1;
   }
   const quit = session.quit; session = null; SIM.setAuto(false);
-  if (quit) { leaveSim(); return showHome(); }
+  if (quit) {
+    if (kind === "exam") { try { await rpc("record_attempt", { p_token: token, p_kind: "exam", p_score: 0, p_mistakes: [...mistakes, `중단 (${doneSteps}/${steps.length}단계)`] }); } catch {} }
+    leaveSim(); poke(); return showHome();
+  }
   const score = Math.round((100 * firstTry) / steps.length);
   let saved = null, err = "";
   try { saved = await rpc("record_attempt", { p_token: token, p_kind: kind, p_score: kind === "exam" ? score : null, p_mistakes: mistakes }); }
   catch (e) { err = errText(e); }
-  leaveSim();
+  leaveSim(); poke();
   const passed = kind === "exam" && score >= PASS;
   screen(kind === "exam" ? `
     <p class="eyebrow">시험 결과</p>
@@ -236,7 +246,7 @@ const siteUrl = () => location.origin + location.pathname;
 async function showAdmin() {
   screen(`
     <div class="admin-head"><div><p class="eyebrow">관리자 · ${esc(me.name)}</p><h1>출하 안전 교육 관리</h1></div>
-      <div class="admin-actions"><button class="btn" id="qrBtn" type="button">접속 QR 코드</button><button class="btn" id="simBtn" type="button">시뮬레이터 상세 화면</button><button class="link" id="out" type="button">로그아웃</button></div></div>
+      <div class="admin-actions"><button class="btn" id="qrBtn" type="button">접속 QR 코드</button><button class="btn" id="allXls" type="button">전체 기록 엑셀</button><button class="btn" id="simBtn" type="button">시뮬레이터 상세 화면</button><button class="link" id="out" type="button">로그아웃</button></div></div>
     <div class="tabs" role="tablist">
       <button role="tab" data-tab="pending" type="button">승인 대기</button><button role="tab" data-tab="all" type="button">전체 기사</button><button role="tab" data-tab="passed" type="button">합격자 명단</button>
     </div>
@@ -244,6 +254,7 @@ async function showAdmin() {
   app.classList.add("wide");
   $a("#out").onclick = () => { app.classList.remove("wide"); logout(); };
   $a("#qrBtn").onclick = showQR;
+  $a("#allXls").onclick = exportAll;
   $a("#simBtn").onclick = () => { app.hidden = true; backBtn.hidden = false; document.querySelector("#stage")?.append(backBtn); window.dispatchEvent(new Event("resize")); };
   app.querySelectorAll("[data-tab]").forEach((b) => (b.onclick = () => { tab = b.dataset.tab; renderTab(); }));
   await loadDrivers();
@@ -337,6 +348,16 @@ async function exportPdf(list) { // Korean text is drawn on a canvas (system fon
     doc.save(`합격자명단_${stamp()}.pdf`);
   } catch { msg("PDF 파일을 만들지 못했습니다. 인터넷 연결을 확인하세요."); }
 }
+async function exportAll() { // backup of every training and exam record
+  try {
+    const list = await rpc("admin_all_attempts", { p_token: token }), X = await lib(XLSX_LIB, "XLSX");
+    const rows = list.map((a) => ({ 일시: when(a.at), 차량번호: a.plate, 성명: a.name, 소속: a.company, 유종: a.fuel, 구분: a.kind === "exam" ? "시험" : "교육",
+      점수: a.score ?? "", 결과: a.kind === "exam" ? (a.passed ? "합격" : "불합격") : "이수", "틀린 단계": (a.mistakes || []).join(", ") }));
+    const ws = X.utils.json_to_sheet(rows); ws["!cols"] = [18, 12, 10, 16, 8, 6, 6, 8, 40].map((w) => ({ wch: w }));
+    const wb = X.utils.book_new(); X.utils.book_append_sheet(wb, ws, "전체 기록"); X.writeFile(wb, `교육기록_전체_${stamp()}.xlsx`);
+    msg(`기록 ${rows.length}건을 받았습니다.`, true);
+  } catch (e) { msg(e.message === "session_expired" ? ERR.session_expired : "엑셀 파일을 만들지 못했습니다. 인터넷 연결을 확인하세요."); }
+}
 async function showQR() {
   const ov = document.createElement("div"); ov.className = "qr-full";
   ov.innerHTML = `<div class="qr-card"><h2>출하 안전 교육</h2><p>휴대폰 카메라로 찍으면 교육 화면이 열립니다</p><div id="qrBox"></div><p class="url">${esc(siteUrl())}</p>
@@ -349,12 +370,21 @@ async function showQR() {
   } catch { ov.querySelector("#qrBox").textContent = "QR 코드를 만들지 못했습니다. 인터넷 연결을 확인하세요."; }
 }
 
+// shared devices: nobody touching the screen for a while logs the account out (never during training or an exam)
+let idleT = 0;
+function poke() {
+  clearTimeout(idleT);
+  if (token && !session) idleT = setTimeout(() => { if (token && !session) { app.classList.remove("wide"); logout().then(() => msg("한동안 사용이 없어 로그아웃했습니다.")); } }, (me?.role === "admin" ? 30 : 5) * 60000);
+}
+for (const ev of ["pointerdown", "keydown"]) addEventListener(ev, poke, { passive: true });
+
 // ---------- start ----------
 async function route() {
   leaveSim(); app.classList.remove("wide");
   if (!token) return showLogin();
   try { me = { ...(me || {}), ...(await rpc("me", { p_token: token })) }; }
-  catch (e) { token = null; store.set("edu-token", null); return showLogin(e.message === "network" ? ERR.network : ""); }
+  catch (e) { token = null; sess.set("edu-token", null); return showLogin(e.message === "network" ? ERR.network : ""); }
+  poke();
   return me.role === "admin" ? showAdmin() : showHome();
 }
 route();
