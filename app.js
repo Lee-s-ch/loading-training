@@ -1,5 +1,5 @@
 // 출하 안전 교육: login, guided training, exam, admin. Talks to Supabase through RPC functions only.
-import { QUESTIONS } from "./questions.js";
+import { QUESTIONS, EVENTS } from "./questions.js";
 
 const API = "https://tjtbylpuvoqfzmfmsxvi.supabase.co/rest/v1/rpc/";
 const KEY = "sb_publishable_7UniGhMJeSWPInc4EYsz8g_j8wZJc2j"; // publishable key: safe in the page, every function checks the session itself
@@ -180,13 +180,42 @@ async function perform(SIM, i) { // let the driver act out step i, then wait unt
   SIM.runStep(i);
   while (!(st.done() && !SIM.busy())) { if (session.quit) return; await sleep(150); if (Date.now() - t0 > 180000) break; }
 }
+async function askEvent(ev, head, kind) { // an abnormal situation: training shows the answer, the exam asks it. Resolves true (first try), false, or "quit"
+  if (kind === "training") {
+    card(`${head}<h2 class="bad">이런 일이 생기면</h2><p>${esc(ev.s)}</p><p><b>이렇게 합니다:</b> ${esc(ev.ok)}</p>
+      <button class="big primary" data-v="0" type="button">알겠습니다</button>
+      <details><summary>이렇게 하면 안 돼요</summary><ul>${ev.wrong.map((w) => `<li><b>${esc(w.t)}</b> ${esc(w.why)}</li>`).join("")}</ul></details>`);
+    say(`이런 일이 생기면. ${ev.s} ${ev.ok}`);
+    return (await choose([1])) === "quit" || session.quit ? "quit" : true;
+  }
+  let first = true;
+  for (;;) {
+    const opts = shuffle([{ ok: true, t: ev.ok }, ...ev.wrong]);
+    card(`${head}<h2 class="bad">${esc(ev.s)}</h2><p>어떻게 할까요?</p><div class="opts">${opts.map((o, k) => `<button class="big opt" data-v="${k}" type="button">${esc(o.t)}</button>`).join("")}</div>`);
+    say(`${ev.s} 어떻게 할까요?`);
+    const pick = await choose(opts);
+    if (pick === "quit" || session.quit) return "quit";
+    if (pick.ok) return first;
+    first = false;
+    card(`${head}<h2 class="bad">다시 생각해 보세요</h2><p>${esc(pick.why)}</p><button class="big primary" data-v="0" type="button">다시 고르기</button>`);
+    say(pick.why);
+    if ((await choose([1])) === "quit") return "quit";
+  }
+}
 async function runSession(kind) {
   const SIM = await waitSim(), m = modeOf(me.fuel), Q = QUESTIONS[m];
   session = { kind, quit: false };
   enterSim(); SIM.setAuto(false); SIM.resetScene(m); SIM.goView("follow");
   const steps = SIM.STEPS[m], mistakes = []; let firstTry = 0, doneSteps = 0;
+  const evs = kind === "exam" ? [EVENTS[m][(Math.random() * EVENTS[m].length) | 0]] : EVENTS[m], total = steps.length + (kind === "exam" ? 1 : 0);
   for (let i = 0; i < steps.length && !session.quit; i++) {
     const head = `<p class="step-no">${i + 1} / ${steps.length} 단계 · ${kind === "exam" ? "시험" : "교육"}</p>`;
+    for (const ev of evs.filter((e) => e.at === i)) {
+      const r = await askEvent(ev, head, kind);
+      if (r === "quit") break;
+      if (r) firstTry++; else if (!mistakes.includes(ev.tag)) mistakes.push(ev.tag);
+    }
+    if (session.quit) break;
     let first = true;
     for (;;) {
       let pick;
@@ -220,7 +249,7 @@ async function runSession(kind) {
     if (kind === "exam") { try { await rpc("record_attempt", { p_token: token, p_kind: "exam", p_score: 0, p_mistakes: [...mistakes, `중단 (${doneSteps}/${steps.length}단계)`] }); } catch {} }
     leaveSim(); poke(); return showHome();
   }
-  const score = Math.round((100 * firstTry) / steps.length);
+  const score = Math.round((100 * firstTry) / total);
   let saved = null, err = "";
   try { saved = await rpc("record_attempt", { p_token: token, p_kind: kind, p_score: kind === "exam" ? score : null, p_mistakes: mistakes }); }
   catch (e) { err = errText(e); }
@@ -243,6 +272,21 @@ async function runSession(kind) {
 }
 
 // ---------- admin ----------
+async function renderStats(body) { // which steps drivers get wrong most often in exams: where to focus training
+  body.innerHTML = "불러오는 중…";
+  let list; try { list = await rpc("admin_all_attempts", { p_token: token }); } catch (e) { body.textContent = errText(e); return; }
+  const SIM = await waitSim(), out = [];
+  for (const m of ["bottom", "top"]) {
+    const ex = list.filter((a) => a.kind === "exam" && a.mode === m), n = ex.length;
+    const names = [...SIM.STEPS[m].map((s) => s.t), ...EVENTS[m].map((e) => e.tag).filter((t, i, all) => all.indexOf(t) === i)];
+    const rows = names.map((t) => ({ t, c: ex.filter((a) => Array.isArray(a.mistakes) && a.mistakes.includes(t)).length })).sort((x, y) => y.c - x.c);
+    const quit = ex.filter((a) => (a.mistakes || []).some((x) => String(x).startsWith("중단"))).length;
+    out.push(`<h2>${m === "bottom" ? "하부 출하 (휘발유)" : "상부 출하 (등유·경유)"} · 시험 ${n}회${quit ? ` (중단 ${quit}회)` : ""}</h2>` + (n ? `<div class="table-wrap"><table class="stats"><thead><tr><th>단계·상황</th><th>틀린 시험</th><th>비율</th></tr></thead><tbody>${rows.map((r) => {
+      const pct = Math.round((100 * r.c) / n);
+      return `<tr><td>${esc(r.t)}</td><td class="num">${r.c}회</td><td><span class="bar"><i style="width:${pct}%"></i></span> <span class="num">${pct}%</span></td></tr>`; }).join("")}</tbody></table></div>` : '<p class="lead">아직 시험 기록이 없습니다.</p>'));
+  }
+  body.innerHTML = `<p class="note">시험에서 처음 고른 답이 틀린 횟수입니다. 많이 틀리는 단계를 교육 때 더 설명하세요.</p>${out.join("")}`;
+}
 let drivers = [], tab = "pending";
 const lib = (src, glob) => new Promise((res, rej) => { if (window[glob]) return res(window[glob]); const s = document.createElement("script"); s.src = src; s.onload = () => res(window[glob]); s.onerror = rej; document.head.append(s); });
 const QR_LIB = "https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js", XLSX_LIB = "https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js", PDF_LIB = "https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js";
@@ -252,7 +296,7 @@ async function showAdmin() {
     <div class="admin-head"><div><p class="eyebrow">관리자 · ${esc(me.name)}</p><h1>출하 안전 교육 관리</h1></div>
       <div class="admin-actions"><button class="btn" id="qrBtn" type="button">접속 QR 코드</button><button class="btn" id="allXls" type="button">전체 기록 엑셀</button><button class="btn" id="simBtn" type="button">시뮬레이터 상세 화면</button><button class="link" id="out" type="button">로그아웃</button></div></div>
     <div class="tabs" role="tablist">
-      <button role="tab" data-tab="pending" type="button">승인 대기</button><button role="tab" data-tab="all" type="button">전체 기사</button><button role="tab" data-tab="passed" type="button">합격자 명단</button>
+      <button role="tab" data-tab="pending" type="button">승인 대기</button><button role="tab" data-tab="all" type="button">전체 기사</button><button role="tab" data-tab="passed" type="button">합격자 명단</button><button role="tab" data-tab="stats" type="button">오답 통계</button>
     </div>
     <div id="tabBody">불러오는 중…</div><p class="msg" role="status"></p>`);
   app.classList.add("wide");
@@ -263,18 +307,20 @@ async function showAdmin() {
   app.querySelectorAll("[data-tab]").forEach((b) => (b.onclick = () => { tab = b.dataset.tab; renderTab(); }));
   await loadDrivers();
 }
-backBtn.onclick = () => { backBtn.hidden = true; app.hidden = false; free = false; poke(); };
+backBtn.onclick = () => { backBtn.hidden = true; app.hidden = false; free = false; document.body.classList.remove("free"); poke(); window.dispatchEvent(new Event("resize")); };
 let free = false;
 async function openFree() {
   const SIM = await waitSim(); free = true;
   SIM.setAuto(false); SIM.resetScene(modeOf(me.fuel)); SIM.goView("follow");
-  app.hidden = true; backBtn.textContent = "처음 화면으로"; backBtn.hidden = false; document.querySelector("#stage")?.append(backBtn);
+  app.hidden = true; backBtn.textContent = "처음 화면으로"; backBtn.hidden = false; document.body.classList.add("free");
+  if (matchMedia("(max-width: 600px)").matches) document.querySelector(".dock")?.before(backBtn); // phone: 3D on top, a big button and the controls scroll below
+  else document.querySelector("#stage")?.append(backBtn);
   window.dispatchEvent(new Event("resize"));
 }
 let adminTimer = 0;
 async function loadDrivers() {
   clearInterval(adminTimer);
-  adminTimer = setInterval(() => { if (!app.hidden && app.classList.contains("wide") && tab !== "history" && !document.querySelector("#tabBody form")) loadDrivers(); }, 15000);
+  adminTimer = setInterval(() => { if (!app.hidden && app.classList.contains("wide") && tab !== "history" && tab !== "stats" && !document.querySelector("#tabBody form")) loadDrivers(); }, 15000);
   try { drivers = (await rpc("admin_drivers", { p_token: token })).filter((d) => d.role !== "admin"); renderTab(); }
   catch (e) { if (e.message === "session_expired") return logout(); msg(errText(e)); }
 }
@@ -283,6 +329,7 @@ function renderTab() {
   const pend = drivers.filter((d) => d.status === "pending");
   app.querySelector('[data-tab="pending"]').textContent = `승인 대기 ${pend.length}`;
   const body = $a("#tabBody");
+  if (tab === "stats") return renderStats(body);
   if (tab === "passed") {
     const list = drivers.filter((d) => d.passed_at).sort((a, b) => a.passed_at.localeCompare(b.passed_at));
     body.innerHTML = `<div class="bar"><span>합격자 ${list.length}명</span><span class="grow"></span>
