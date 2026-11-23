@@ -291,7 +291,7 @@ legend { font-size: 13px; padding: 0; margin-bottom: 6px; }
   <aside class="panel">
     <div class="card status" id="statusCard" aria-live="polite">
       <h2>인터록</h2>
-      <div class="big" id="statusBig">기동 차단</div>
+      <div class="big" id="statusBig">출하 차단</div>
       <div class="why" id="statusWhy"></div>
       <div class="conds">
         <div class="cond"><span class="dot" id="dotVehicle"></span>차량 접지 정상<span class="chip">기존</span></div>
@@ -367,6 +367,7 @@ import { EffectComposer } from "three/addons/postprocessing/EffectComposer.js";
 import { RenderPass } from "three/addons/postprocessing/RenderPass.js";
 import { GTAOPass } from "three/addons/postprocessing/GTAOPass.js";
 import { OutputPass } from "three/addons/postprocessing/OutputPass.js";
+import { GLTFLoader } from "three/addons/loaders/GLTFLoader.js";
 
 const V = (x, y, z) => new THREE.Vector3(x, y, z);
 const $ = (id) => document.getElementById(id);
@@ -847,6 +848,71 @@ for (const x of [-0.07, 0.07]) for (const z of [0.142, -0.142]) hide(box(0.045, 
 for (const x of [-0.1, 0.1]) { mesh(new THREE.CylinderGeometry(0.088, 0.085, 0.04, 20, 1, true), mat.harness, V(x, 0.8, 0), harness); }
 const dRing = mesh(new THREE.TorusGeometry(0.04, 0.01, 8, 20), mat.steel, V(0, 1.38, -0.155), harness);
 
+// ---------- Mixamo motion for the hand-built driver ----------
+// tex/driver.glb holds an invisible Mixamo skeleton (X Bot) and its motion clips. The driver above keeps its look:
+// every frame its hips height, hands and feet follow the skeleton's (two-bone IK), so it moves like the clips.
+// If the file fails to load, the hand-built motion stays.
+const YB = { mixer: null, acts: {}, cur: "", seg: null, bones: null, rest: 0 };
+new GLTFLoader().load("tex/driver.glb", (g) => {
+  const m = g.scene; m.scale.setScalar(0.0097); m.visible = false; // centimetres to metres: a 1.75 m skeleton, never drawn
+  driver.add(m); // beside the rig, not inside it: the rig moves to follow it
+  YB.mixer = new THREE.AnimationMixer(m);
+  for (const c of g.animations) YB.acts[c.name] = YB.mixer.clipAction(c);
+  YB.acts.idle.play(); YB.cur = "idle"; YB.mixer.update(0);
+  const bone = (n) => m.getObjectByName("mixamorig" + n);
+  YB.bones = { hips: bone("Hips"), hL: bone("LeftHand"), hR: bone("RightHand"), fL: bone("LeftFoot"), fR: bone("RightFoot") };
+  YB.rest = YB.bones.hips.getWorldPosition(V(0, 0, 0)).y - driver.position.y;
+}, undefined, () => {});
+const _yb = new THREE.Vector3();
+function ybFollow(holdingLever) { // copy the skeleton onto the hand-built joints
+  const B_ = YB.bones, at_ = (o, dy = 0) => o.getWorldPosition(_yb).add(V(0, dy, 0));
+  rig.position.y = B_.hips.getWorldPosition(_yb).y - driver.position.y - YB.rest + jump.h;
+  // a hand working on equipment keeps the hand-built reach, so it lands on the real handle or button
+  const busyL = state.reachL && look.target, busyR = (state.reach && look.target) || holdingLever;
+  if (!busyL) ik2(arms.L.sh, arms.L.el, at_(B_.hL), 0.3, 0.3, 1, 1);
+  if (!busyR) ik2(arms.R.sh, arms.R.el, at_(B_.hR), 0.3, 0.36, 1, 1);
+  ik2(legs[0], knees[0], at_(B_.fR, -0.07), 0.44, 0.47, -1, 1); // legs[0] sits at -x: the driver's right
+  ik2(legs[1], knees[1], at_(B_.fL, -0.07), 0.44, 0.47, -1, 1);
+}
+const LADDER_CLIP = { up: new Map(), down: new Map() };
+function ybPlay(name, { loop = true, ts = 1, time = null, fade = 0.25, restart = false } = {}) {
+  const a = YB.acts[name]; if (!a) return;
+  a.timeScale = ts;
+  if (YB.cur === name && !restart) return;
+  const prev = YB.acts[YB.cur];
+  a.reset(); a.setLoop(loop ? THREE.LoopRepeat : THREE.LoopOnce); a.clampWhenFinished = true; a.timeScale = ts;
+  if (time !== null) a.time = time;
+  a.setEffectiveWeight(1); a.fadeIn(fade).play(); if (prev && prev !== a) prev.fadeOut(fade);
+  YB.cur = name;
+}
+function ybPose(dt, walking, onLadder, holdingLever) {
+  if (!YB.mixer) return;
+  const w = act && act.walk, dy = w ? w.y - driver.position.y : 0;
+  if (!LADDER_CLIP.up.size) { // which clip each ladder leg of the route plays, going up and coming down
+    LADDER_CLIP.up.set(S.ladderMount, "climbStart").set(S.ladderTop, "climb").set(S.ladderExit, "climbTop");
+    LADDER_CLIP.down.set(S.ladderFoot, "climbStart").set(S.ladderMount, "climb").set(S.ladderTop, "climbTop");
+  }
+  const clip = w && Math.abs(dy) > 0.01 ? (dy > 0 ? LADDER_CLIP.up : LADDER_CLIP.down).get(w) : null;
+  const reaching = state.reach || state.reachL || holdingLever;
+  if (clip) {
+    const a = YB.acts[clip], dur = a.getClip().duration, rev = dy < 0;
+    if (YB.seg !== act) { // a new leg: stretch the clip over the time the driver takes to cover it
+      YB.seg = act;
+      const legT = Math.max(0.2, w.distanceTo(driver.position) / act.speed);
+      const ts = clip === "climb" ? act.speed / 0.64 : dur / legT;
+      ybPlay(clip, { loop: clip === "climb", ts: rev ? -ts : ts, time: rev ? dur : 0, restart: true });
+    }
+  } else if (onLadder) { if (YB.acts[YB.cur]) YB.acts[YB.cur].timeScale = 0; }
+  else if (walking) ybPlay("walk", { ts: (act && act.walk ? act.speed : 1.8) / 1.4 });
+  else if (reaching) {
+    const low = !holdingLever && look.target && look.target.y - driver.position.y < 0.7;
+    if (low) ybPlay("kneel", { loop: false, ts: 3 }); else if (YB.cur !== "kneel") ybPlay("idle"); // the reaching arm itself stays hand-built
+  } else if (YB.cur === "kneel") ybPlay("stand", { loop: false, ts: 3 });
+  else if (YB.cur !== "stand" || !YB.acts.stand.isRunning()) ybPlay("idle");
+  YB.mixer.update(dt);
+  ybFollow(holdingLever);
+}
+
 // ---------- modes ----------
 const MODES = {
   top: {
@@ -1069,7 +1135,7 @@ function toast(msg) { toastEl.textContent = msg; toastEl.hidden = false; clearTi
 function block(msg) { log(msg, "w"); toast(msg); render(); }
 
 // ---------- what each control does ----------
-function startLoad() { state.loading = true; state.paused = false; state.alarm = false; state.alarms = 0; log("기동 허가 → 출하 시작", "g"); render(); }
+function startLoad() { state.loading = true; state.paused = false; state.alarm = false; state.alarms = 0; log("출하 허가 → 출하 시작", "g"); render(); }
 function stopLoad(why, kind = "") {
   if (!state.loading) return;
   Object.assign(state, { loading: false, paused: false, alarm: false, loaded: true, ready: false, short: state.progress < 0.999 });
@@ -1077,7 +1143,7 @@ function stopLoad(why, kind = "") {
 }
 // a ready permit given at the upper LC lapses if a ground condition fails before the flow starts
 function checkReady() {
-  if (state.ready && !state.loading && (!vehicleOK() || !bodyOK())) { state.ready = false; log("출하 준비 취소: 기동 전 접지 조건 불량", "w"); }
+  if (state.ready && !state.loading && (!vehicleOK() || !bodyOK())) { state.ready = false; log("출하 준비 취소: 출하 전 접지 조건 불량", "w"); }
 }
 const A = {
   rod() { state.rod = true; body.kv = 0; log("방전봉 터치: 인체 전위 0 kV (잡는 순간만, 움직이면 다시 쌓임)"); render(); },
@@ -1106,14 +1172,14 @@ const A = {
     }
     if (!T.vapor.on) return block("작업 순서: 유증기 회수 호스를 먼저 체결하세요");
     if (!T.arm.on) return block("커플러를 먼저 장착하세요");
-    if (!bodyOK()) return block("기동 차단: 인체 접지 불량");
+    if (!bodyOK()) return block("출하 차단: 인체 접지 불량");
     startLoad();
   },
   ulc() { // upper LC
     if (state.loading) return stopLoad("상부 LC 정지: 출하 종료");
     if (state.loaded || state.ready) return;
     if (!state.lc) return block("상부 LC: 하부 LC에서 출하 과정을 먼저 시작하세요");
-    if (!vehicleOK()) return block("기동 차단: 차량 접지 불량");
+    if (!vehicleOK()) return block("출하 차단: 차량 접지 불량");
     if (!bodyOK()) return block("출하 준비 차단: 인체 접지 불량");
     if (!T.arm.on) return block("로딩암을 해치에 먼저 삽입하세요");
     state.ready = true; log("상부 LC 출하 준비: 차량 · 인체 접지 정상", "g"); render();
@@ -1122,7 +1188,7 @@ const A = {
     if (state.loading) { state.paused = !state.paused; log(state.paused ? "핸드레버 놓음: 유량 정지" : "핸드레버 당김: 출하 재개"); render(); return; }
     if (state.loaded) return;
     if (!state.ready) return block("상부 LC에서 출하 준비를 먼저 누르세요");
-    if (!vehicleOK() || !bodyOK()) { state.ready = false; return block("기동 차단: 출하 준비 뒤 접지 조건이 바뀌었습니다. 다시 출하 준비를 누르세요"); }
+    if (!vehicleOK() || !bodyOK()) { state.ready = false; return block("출하 차단: 출하 준비 뒤 접지 조건이 바뀌었습니다. 다시 출하 준비를 누르세요"); }
     startLoad();
   },
 };
@@ -1247,11 +1313,12 @@ function poseDriver(dt) {
     }
   }
   if (jump.v || jump.h) { jump.h = Math.max(0, jump.h + jump.v * dt); jump.v = jump.h ? jump.v - 9.8 * dt : 0; } // simple ballistic hop
-  const bob = (walking && !climbing ? Math.abs(sw) * 0.028 - 0.014 : 0);
+  const bob = (walking && !climbing && !YB.mixer ? Math.abs(sw) * 0.028 - 0.014 : 0);
   rig.position.y = jump.h ? bob + jump.h : rig.position.y + (bob - rig.position.y) * k;
   if (jump.h) { ease(knees[0], "x", 0.9); ease(knees[1], "x", 0.9); ease(legs[0], "x", -0.5); ease(legs[1], "x", -0.5); }
-  rig.rotation.z += ((walking ? 0 : 0.022) - rig.rotation.z) * Math.min(1, dt * 3);   // relaxed stance
-  rig.rotation.y += ((walking && !climbing ? sw * 0.08 : 0) - rig.rotation.y) * k;   // shoulders counter-rotate the stride
+  const hand = YB.mixer ? 0 : 1; // the clips carry their own stance and stride
+  rig.rotation.z += ((walking ? 0 : 0.022 * hand) - rig.rotation.z) * Math.min(1, dt * 3);   // relaxed stance
+  rig.rotation.y += ((walking && !climbing ? sw * 0.08 * hand : 0) - rig.rotation.y) * k;   // shoulders counter-rotate the stride
   let hy = 0, hx = walking ? 0.08 : 0;
   if (look.target && !walking) {
     const hp = driver.position.clone().add(V(0, 1.6, 0)), d = look.target.clone().sub(hp);
@@ -1261,6 +1328,7 @@ function poseDriver(dt) {
   if (climbing) hx = -0.35;
   ease(headG, "y", hy, Math.min(1, dt * 6)); ease(headG, "x", hx, Math.min(1, dt * 6));
   torso.scale.y = 1 + (walking ? 0 : Math.sin(performance.now() / 700) * 0.008);
+  ybPose(dt, walking, onLadder, holdingLever);
 }
 
 // standing spots and the route up the rear ladder
@@ -1286,13 +1354,13 @@ function barriers() {
   return out;
 }
 const go = walk;
-const climbSeq = () => [go(S.rear), walk(S.ladderFoot), face(V(0, 0, -0.45)), walk(S.ladderMount, 0.6), walk(S.ladderTop, 0.75), walk(S.ladderExit, 0.5), walk(S.deck, 1.0), now_(() => { state.onTop = true; log("후면 사다리로 유조차 위에 오름"); })];
-const descendSeq = () => [walk(S.deck), walk(S.ladderExit, 0.8), face(V(-10, TOPY, -0.45)), walk(S.ladderTop, 0.5, true), walk(S.ladderMount, 0.75, true), walk(S.ladderFoot, 0.6, true), now_(() => { state.onTop = false; log("유조차에서 내려옴"); }), walk(S.rear)];
+const climbSeq = () => [go(S.rear), walk(S.ladderFoot), face(V(0, 0, -0.45)), walk(S.ladderMount, 0.5), walk(S.ladderTop, 0.75), walk(S.ladderExit, 0.23), walk(S.deck, 1.0), now_(() => { state.onTop = true; log("후면 사다리로 유조차 위에 오름"); })];
+const descendSeq = () => [walk(S.deck), walk(S.ladderExit, 0.8), face(V(-10, TOPY, -0.45)), walk(S.ladderTop, 0.23, true), walk(S.ladderMount, 0.75, true), walk(S.ladderFoot, 0.5, true), now_(() => { state.onTop = false; log("유조차에서 내려옴"); }), walk(S.rear)];
 const down = () => dyn(() => (state.onTop ? descendSeq() : []));
 const up = () => dyn(() => (state.onTop ? [] : [B.harness(true), B.clip(true), ...climbSeq()]));
 // go to a spot, turn, reach, then apply fn
 const at = (spot, look, fn, o = {}) => [go(spot), face(look), now_(() => { if (o.left) state.reachL = true; else state.reach = o.up ? "up" : true; }),
-  wait(o.dur || 0.5, () => { state.reach = false; state.reachL = false; fn(); staticDischarge(look); })];
+  wait(o.dur || (look.y - spot.y < 0.7 ? 1.0 : 0.5), () => { state.reach = false; state.reachL = false; fn(); staticDischarge(look); })];
 const B = { // one self-checking move per piece of work
   rod: () => dyn(() => (state.rod ? [] : [down(), ...at(S.rod, ROD_TOP, A.rod)])),
   chock: (on) => dyn(() => (T.chock.on === on ? [] : [down(), ...at(S.chock, on ? T.chock.b : T.chock.a, () => A.chock(on))])),
@@ -1619,11 +1687,11 @@ function render() {
     if (state.short) ui.why.textContent = `정량 미달 (${Math.round(state.progress * TARGET_L).toLocaleString("en-US")} / ${TARGET_L.toLocaleString("en-US")} L). 현장 절차에 따라 재개 여부를 정하고 정리합니다.`; else
     ui.why.textContent = state.alarms ? `이번 출하 중 인체 접지 경고 ${state.alarms}회가 기록됐습니다.` : "인체 접지 경고 없이 끝났습니다. 순서대로 정리하세요.";
   } else if (permit) {
-    ui.card.classList.add("ok"); ui.big.textContent = "기동 허가";
+    ui.card.classList.add("ok"); ui.big.textContent = "출하 허가";
     ui.why.textContent = mode === "top" ? (state.ready ? "출하 준비 완료. 핸드레버를 당기면 출하됩니다." : "두 조건이 정상입니다. 상부 LC에서 출하 준비를 누를 수 있습니다.")
       : (state.lc ? "두 조건이 정상입니다. 커플러 장착 후 LC에서 적재를 시작합니다." : "두 조건이 정상입니다. LC 회차선택으로 넘어갈 수 있습니다.");
   } else {
-    ui.card.classList.add("stop"); ui.big.textContent = "기동 차단";
+    ui.card.classList.add("stop"); ui.big.textContent = "출하 차단";
     const r = []; if (!vOK) r.push("차량 접지"); if (!bOK) r.push(ui.fault.checked ? "인체 접지(감시 회로 고장·접지선 단선)" : state.band === "cut" ? "인체 접지(커넥터 분리)" : "인체 접지");
     ui.why.textContent = r.join(" · ") + " 불량으로 출하를 시작할 수 없습니다.";
   }
@@ -1703,7 +1771,7 @@ function moveDriver(dt) {
 // doing something by hand: turn to it, reach, then apply
 function doAct(target, fn, o = {}) {
   queue.push(face(target), now_(() => { if (o.left) state.reachL = true; else state.reach = o.up ? "up" : true; }),
-    wait(0.35, () => { state.reach = false; state.reachL = false; fn(); staticDischarge(target); }));
+    wait(target.y - driver.position.y < 0.7 ? 0.9 : 0.35, () => { state.reach = false; state.reachL = false; fn(); staticDischarge(target); }));
   render();
 }
 const ITEMS = [
