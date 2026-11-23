@@ -31,7 +31,7 @@ const store = { get(k) { try { return localStorage.getItem(k); } catch { return 
 const sess = { get(k) { try { return sessionStorage.getItem(k); } catch { return null; } }, set(k, v) { try { v == null ? sessionStorage.removeItem(k) : sessionStorage.setItem(k, v); } catch {} } };
 
 // ---------- shell ----------
-const app = document.createElement("div"); app.id = "app"; document.body.append(app);
+const app = document.getElementById("app"); // in the page from the start, so the simulator never shows before the login screen
 const coach = document.createElement("div"); coach.id = "coach"; coach.hidden = true;
 const quitBtn = document.createElement("button"); quitBtn.id = "quit"; quitBtn.type = "button"; quitBtn.textContent = "그만하기"; quitBtn.hidden = true;
 const backBtn = document.createElement("button"); backBtn.id = "backAdmin"; backBtn.type = "button"; backBtn.textContent = "관리자 화면으로"; backBtn.hidden = true;
@@ -283,7 +283,7 @@ async function renderStats(body) { // which steps drivers get wrong most often i
     const quit = ex.filter((a) => (a.mistakes || []).some((x) => String(x).startsWith("중단"))).length;
     out.push(`<h2>${m === "bottom" ? "하부 출하 (휘발유)" : "상부 출하 (등유·경유)"} · 시험 ${n}회${quit ? ` (중단 ${quit}회)` : ""}</h2>` + (n ? `<div class="table-wrap"><table class="stats"><thead><tr><th>단계·상황</th><th>틀린 시험</th><th>비율</th></tr></thead><tbody>${rows.map((r) => {
       const pct = Math.round((100 * r.c) / n);
-      return `<tr><td>${esc(r.t)}</td><td class="num">${r.c}회</td><td><span class="bar"><i style="width:${pct}%"></i></span> <span class="num">${pct}%</span></td></tr>`; }).join("")}</tbody></table></div>` : '<p class="lead">아직 시험 기록이 없습니다.</p>'));
+      return `<tr><td>${esc(r.t)}</td><td class="num">${r.c}회</td><td><span class="meter"><i style="width:${pct}%"></i></span> <span class="num">${pct}%</span></td></tr>`; }).join("")}</tbody></table></div>` : '<p class="lead">아직 시험 기록이 없습니다.</p>'));
   }
   body.innerHTML = `<p class="note">시험에서 처음 고른 답이 틀린 횟수입니다. 많이 틀리는 단계를 교육 때 더 설명하세요.</p>${out.join("")}`;
 }

@@ -63,8 +63,8 @@
 #app .num { font-variant-numeric: tabular-nums; }
 #app .stats td:first-child { white-space: normal; }
 #app h2 + .table-wrap { margin-top: -4px; }
-#app .bar { display: inline-block; width: 120px; height: 10px; border-radius: 5px; background: var(--e-bg); vertical-align: middle; overflow: hidden; }
-#app .bar i { display: block; height: 100%; background: var(--e-warn); }
+#app .meter { display: inline-block; width: 120px; height: 10px; border-radius: 5px; background: var(--e-bg); vertical-align: middle; overflow: hidden; }
+#app .meter i { display: block; height: 100%; background: var(--e-warn); }
 .pill { display: inline-block; padding: 2px 10px; border-radius: 999px; font-size: 14px; font-weight: 700; background: var(--e-bg); color: var(--e-muted); }
 .pill.pass { background: var(--e-ok-soft); color: var(--e-accent); }
 .pill.fail { background: var(--e-warn-soft); color: var(--e-warn); }
