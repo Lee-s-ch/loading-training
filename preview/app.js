@@ -34,6 +34,7 @@ const sess = { get(k) { try { return sessionStorage.getItem(k); } catch { return
 const app = document.getElementById("app"); // in the page from the start, so the simulator never shows before the login screen
 const coach = document.createElement("div"); coach.id = "coach"; coach.hidden = true;
 const quitBtn = document.createElement("button"); quitBtn.id = "quit"; quitBtn.type = "button"; quitBtn.textContent = "그만하기"; quitBtn.hidden = true;
+const voiceBtn = document.createElement("button"); voiceBtn.id = "voiceBtn"; voiceBtn.type = "button"; voiceBtn.hidden = true; // voice on/off, top right of the training / exam screen
 const backBtn = document.createElement("button"); backBtn.id = "backAdmin"; backBtn.type = "button"; backBtn.textContent = "관리자 화면으로"; backBtn.hidden = true;
 let me = null, token = sess.get("edu-token");
 function screen(html) { app.hidden = false; app.innerHTML = `<div class="sheet">${html}</div>`; app.scrollTop = 0; return app; }
@@ -45,6 +46,8 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
 // voice guide (browser speech; quality depends on the device)
 let voiceOn = store.get("edu-voice") !== "0";
+function setVoice(on) { voiceOn = on; store.set("edu-voice", on ? "1" : "0"); if (!on) try { speechSynthesis.cancel(); } catch {} voiceBtn.textContent = on ? "🔊 음성 켜짐" : "🔇 음성 꺼짐"; voiceBtn.setAttribute("aria-pressed", String(on)); }
+voiceBtn.onclick = () => setVoice(!voiceOn);
 function say(text) {
   if (!voiceOn || !("speechSynthesis" in window)) return;
   try { speechSynthesis.cancel(); const u = new SpeechSynthesisUtterance(text); u.lang = "ko-KR"; u.rate = 0.92; speechSynthesis.speak(u); } catch {}
@@ -135,7 +138,7 @@ async function showHome() {
   $a("#goRec").onclick = showMyRecords;
   $a("#goFree").onclick = openFree;
   $a("#out").onclick = logout;
-  $a("#voice").onchange = (e) => { voiceOn = e.target.checked; store.set("edu-voice", voiceOn ? "1" : "0"); };
+  $a("#voice").onchange = (e) => setVoice(e.target.checked);
   try {
     const list = await rpc("my_attempts", { p_token: token });
     const ex = list.filter((a) => a.kind === "exam"), passed = ex.find((a) => a.passed);
@@ -159,8 +162,8 @@ async function showMyRecords() {
 
 // ---------- training and exam in the simulator ----------
 let session = null;
-function enterSim() { document.body.classList.add("easy"); app.hidden = true; coach.hidden = false; quitBtn.hidden = false; document.querySelector("#stage")?.append(coach, quitBtn); window.dispatchEvent(new Event("resize")); }
-function leaveSim() { document.body.classList.remove("easy"); coach.hidden = true; quitBtn.hidden = true; try { speechSynthesis.cancel(); } catch {} window.dispatchEvent(new Event("resize")); }
+function enterSim() { document.body.classList.add("easy"); app.hidden = true; coach.hidden = false; quitBtn.hidden = false; setVoice(voiceOn); voiceBtn.hidden = false; window.SIM?.resetCam(); document.querySelector("#stage")?.append(coach, quitBtn, voiceBtn); window.dispatchEvent(new Event("resize")); }
+function leaveSim() { document.body.classList.remove("easy"); coach.hidden = true; quitBtn.hidden = true; voiceBtn.hidden = true; try { speechSynthesis.cancel(); } catch {} window.dispatchEvent(new Event("resize")); }
 quitBtn.onclick = () => {
   if (session?.kind === "exam" && quitBtn.dataset.sure !== "1") { quitBtn.dataset.sure = "1"; quitBtn.textContent = "중단하면 0점 기록 · 한 번 더 누르기"; setTimeout(() => { quitBtn.dataset.sure = ""; quitBtn.textContent = "그만하기"; }, 4000); return; }
   quitBtn.dataset.sure = ""; quitBtn.textContent = "그만하기";
@@ -303,15 +306,15 @@ async function showAdmin() {
   $a("#out").onclick = () => { app.classList.remove("wide"); logout(); };
   $a("#qrBtn").onclick = showQR;
   $a("#allXls").onclick = exportAll;
-  $a("#simBtn").onclick = () => { app.hidden = true; document.body.classList.add("admin-sim"); backBtn.textContent = "관리자 화면으로"; backBtn.hidden = false; backBtn.classList.remove("inflow"); document.querySelector("#stage")?.append(backBtn); window.dispatchEvent(new Event("resize")); };
+  $a("#simBtn").onclick = () => { app.hidden = true; document.body.classList.add("admin-sim"); window.SIM?.resetCam(); window.SIM?.render(); backBtn.textContent = "관리자 화면으로"; backBtn.hidden = false; backBtn.classList.remove("inflow"); document.querySelector("#stage")?.append(backBtn); window.dispatchEvent(new Event("resize")); };
   app.querySelectorAll("[data-tab]").forEach((b) => (b.onclick = () => { tab = b.dataset.tab; renderTab(); }));
   await loadDrivers();
 }
-backBtn.onclick = () => { backBtn.hidden = true; app.hidden = false; document.body.classList.remove("admin-sim"); free = false; document.body.classList.remove("free"); poke(); window.dispatchEvent(new Event("resize")); };
+backBtn.onclick = () => { backBtn.hidden = true; app.hidden = false; document.body.classList.remove("admin-sim"); window.SIM?.render(); free = false; document.body.classList.remove("free"); poke(); window.dispatchEvent(new Event("resize")); };
 let free = false;
 async function openFree() {
   const SIM = await waitSim(); free = true;
-  SIM.setAuto(false); SIM.resetScene(modeOf(me.fuel)); SIM.goView("follow");
+  SIM.setAuto(false); SIM.resetScene(modeOf(me.fuel)); SIM.resetCam(); SIM.goView("follow"); SIM.render();
   app.hidden = true; backBtn.textContent = "처음 화면으로"; backBtn.hidden = false; document.body.classList.add("free");
   const inflow = matchMedia("(max-width: 600px), (pointer: coarse)").matches; // phones and tablets: the button sits under the 3D view, never on it
   backBtn.classList.toggle("inflow", inflow);
