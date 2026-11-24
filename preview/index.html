@@ -859,31 +859,32 @@ new GLTFLoader().load("tex/driver.glb", (g) => {
   for (const c of g.animations) YB.acts[c.name] = YB.mixer.clipAction(c);
   YB.acts.idle.play(); YB.cur = "idle"; YB.mixer.update(0);
   const bone = (n) => m.getObjectByName("mixamorig" + n);
-  YB.bones = { hips: bone("Hips"), hL: bone("LeftHand"), hR: bone("RightHand"), fL: bone("LeftFoot"), fR: bone("RightFoot") };
+  YB.bones = { hips: bone("Hips"), aL: bone("LeftArm"), eL: bone("LeftForeArm"), hL: bone("LeftHand"), aR: bone("RightArm"), eR: bone("RightForeArm"), hR: bone("RightHand"),
+    uL: bone("LeftUpLeg"), kL: bone("LeftLeg"), fL: bone("LeftFoot"), uR: bone("RightUpLeg"), kR: bone("RightLeg"), fR: bone("RightFoot") };
   YB.rest = YB.bones.hips.getWorldPosition(V(0, 0, 0)).y - driver.position.y;
 }, undefined, () => {});
 const _yb = new THREE.Vector3();
 const _q = new THREE.Quaternion(), _up = new THREE.Vector3(0, 1, 0);
-function ybFollow(holdingLever) { // copy the skeleton onto the hand-built joints
+const DOWN = new THREE.Vector3(0, -1, 0), _q2 = new THREE.Quaternion();
+function ybFollow(holdingLever) { // copy the skeleton's limb directions onto the hand-built joints
   const B_ = YB.bones;
-  // Hands and feet are taken relative to the skeleton's hips, turned back by the hips' own turn (the ladder clips
-  // turn the body round by 180 degrees), then placed on the hand-built hips, which always face the driver's way.
+  // Each segment (upper arm, forearm, thigh, shin) is pointed the way the skeleton's segment points, after turning
+  // the skeleton back by its hips' own turn (the ladder clips turn the body round by 180 degrees). Copying directions
+  // rather than hand and foot positions keeps elbows and knees bending the way the clip bends them.
   const H = driver.worldToLocal(B_.hips.getWorldPosition(new THREE.Vector3()));
   _q.copy(driver.getWorldQuaternion(new THREE.Quaternion())).invert().multiply(B_.hips.getWorldQuaternion(new THREE.Quaternion()));
   const f = new THREE.Vector3(0, 0, 1).applyQuaternion(_q), yaw = Math.atan2(f.x, f.z);
-  const at_ = (o, dy = 0, side = null, handSide = 0) => { const v = driver.worldToLocal(o.getWorldPosition(_yb)).sub(H).applyAxisAngle(_up, -yaw); v.y += dy;
-    if (side !== null) v.x = side; // feet stay under their own hip: the clip walks on a narrow line that would cross these wider-set legs
-    if (handSide) v.x = handSide > 0 ? Math.max(v.x, 0.14) : Math.min(v.x, -0.14); // a swinging hand stays on its own side of the body
-    return driver.localToWorld(v.add(V(0, H.y, 0))); };
+  const P = (o) => driver.worldToLocal(o.getWorldPosition(new THREE.Vector3())).applyAxisAngle(_up, -yaw);
+  const dir = (a, b) => P(b).sub(P(a)).normalize();
+  const aim = (root, mid, a, b, c) => { root.quaternion.setFromUnitVectors(DOWN, dir(a, b)); _q2.copy(root.quaternion).invert(); mid.quaternion.setFromUnitVectors(DOWN, dir(b, c).applyQuaternion(_q2)); };
   rig.position.y = H.y - YB.rest + jump.h;
   // a hand working on equipment keeps the hand-built reach, so it lands on the real handle or button
   const busyL = state.reachL && look.target, busyR = (state.reach && look.target) || holdingLever;
-  arms.L.el.rotation.y = 0; arms.R.el.rotation.y = 0; // no built-in elbow twist: with the clip's bends it swung the forearm across the belly
-  if (!busyL) ik2(arms.L.sh, arms.L.el, at_(B_.hL, 0, null, 1), 0.3, 0.3, 1, 1);
-  if (!busyR) ik2(arms.R.sh, arms.R.el, at_(B_.hR, 0, null, -1), 0.3, 0.36, 1, 1);
-  ik2(legs[0], knees[0], at_(B_.fR, -0.07, legs[0].position.x), 0.44, 0.47, -1, 1); // legs[0] sits at -x: the driver's right
-  ik2(legs[1], knees[1], at_(B_.fL, -0.07, legs[1].position.x), 0.44, 0.47, -1, 1);
-  for (let i = 0; i < 2; i++) { const an = knees[i].children.find((c) => c.isGroup); if (an) an.rotation.x = -(legs[i].rotation.x + knees[i].rotation.x); } // soles stay level instead of tipping with the shin
+  if (busyL) { arms.L.sh.rotation.y = 0; arms.L.el.rotation.y = 0; } else aim(arms.L.sh, arms.L.el, B_.aL, B_.eL, B_.hL);
+  if (busyR) { arms.R.sh.rotation.y = 0; arms.R.el.rotation.y = 0; } else aim(arms.R.sh, arms.R.el, B_.aR, B_.eR, B_.hR);
+  aim(legs[0], knees[0], B_.uR, B_.kR, B_.fR); // legs[0] sits at -x: the driver's right
+  aim(legs[1], knees[1], B_.uL, B_.kL, B_.fL);
+  for (let i = 0; i < 2; i++) { const an = knees[i].children.find((c) => c.isGroup); if (an) an.quaternion.copy(legs[i].quaternion).multiply(knees[i].quaternion).invert(); } // soles stay level
 }
 const LADDER_CLIP = { up: new Map(), down: new Map() };
 function ybPlay(name, { loop = true, ts = 1, time = null, fade = 0.25, restart = false } = {}) {
@@ -940,7 +941,7 @@ const MODES = {
   },
   bottom: {
     product: "휘발유", workView: "커플러",
-    desc: "하부 출하(휘발유): 접지 커넥터를 꽂은 뒤 같은 접속함에서 나오는 접지 밴드를 차야 LC 회차선택으로 넘어간다.",
+    desc: "하부 출하(휘발유): 접속함의 접지 밴드를 먼저 찬 뒤 접지 커넥터를 꽂아야 LC 회차선택으로 넘어간다. 끝날 때는 접지 커넥터를 분리한 뒤 밴드를 푼다.",
     gate: "인체 접지 확인: LC 회차선택 · 적재 시작",
     bandStart: V(-0.53, 1.14, -2.99), hook: V(-0.3, 0.98, -2.92), coil: { sag: 0.25, r: 0.045, turns: 26 }, drop: 0.3, bandMax: 4.6,
     hoses: [
