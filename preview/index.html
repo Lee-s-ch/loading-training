@@ -871,14 +871,16 @@ function ybFollow(holdingLever) { // copy the skeleton onto the hand-built joint
   const H = driver.worldToLocal(B_.hips.getWorldPosition(new THREE.Vector3()));
   _q.copy(driver.getWorldQuaternion(new THREE.Quaternion())).invert().multiply(B_.hips.getWorldQuaternion(new THREE.Quaternion()));
   const f = new THREE.Vector3(0, 0, 1).applyQuaternion(_q), yaw = Math.atan2(f.x, f.z);
-  const at_ = (o, dy = 0) => { const v = driver.worldToLocal(o.getWorldPosition(_yb)).sub(H).applyAxisAngle(_up, -yaw); v.y += dy; return driver.localToWorld(v.add(V(0, H.y, 0))); };
+  const at_ = (o, dy = 0, side = null) => { const v = driver.worldToLocal(o.getWorldPosition(_yb)).sub(H).applyAxisAngle(_up, -yaw); v.y += dy;
+    if (side !== null) v.x = side; // feet stay under their own hip: the clip walks on a narrow line that would cross these wider-set legs
+    return driver.localToWorld(v.add(V(0, H.y, 0))); };
   rig.position.y = H.y - YB.rest + jump.h;
   // a hand working on equipment keeps the hand-built reach, so it lands on the real handle or button
   const busyL = state.reachL && look.target, busyR = (state.reach && look.target) || holdingLever;
   if (!busyL) ik2(arms.L.sh, arms.L.el, at_(B_.hL), 0.3, 0.3, 1, 1);
   if (!busyR) ik2(arms.R.sh, arms.R.el, at_(B_.hR), 0.3, 0.36, 1, 1);
-  ik2(legs[0], knees[0], at_(B_.fR, -0.07), 0.44, 0.47, -1, 1); // legs[0] sits at -x: the driver's right
-  ik2(legs[1], knees[1], at_(B_.fL, -0.07), 0.44, 0.47, -1, 1);
+  ik2(legs[0], knees[0], at_(B_.fR, -0.07, legs[0].position.x), 0.44, 0.47, -1, 1); // legs[0] sits at -x: the driver's right
+  ik2(legs[1], knees[1], at_(B_.fL, -0.07, legs[1].position.x), 0.44, 0.47, -1, 1);
   for (let i = 0; i < 2; i++) { const an = knees[i].children.find((c) => c.isGroup); if (an) an.rotation.x = -(legs[i].rotation.x + knees[i].rotation.x); } // soles stay level instead of tipping with the shin
 }
 const LADDER_CLIP = { up: new Map(), down: new Map() };
