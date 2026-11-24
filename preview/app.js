@@ -49,19 +49,36 @@ let voiceOn = store.get("edu-voice") !== "0";
 // speaker with two sound waves; off: the same speaker crossed by a slash
 const SPEAKER = `<path d="M2.5 9h4l5.5-4.5v15L6.5 15h-4z" fill="currentColor"/><path d="M15.2 8.6a4.8 4.8 0 0 1 0 6.8M18.3 5.5a9.2 9.2 0 0 1 0 13" fill="none" stroke="currentColor" stroke-width="2.3" stroke-linecap="round"/>`;
 const SLASH = `<path d="M3.5 3.5l17 17" stroke="var(--e-sheet)" stroke-width="5" stroke-linecap="round"/><path d="M3.5 3.5l17 17" stroke="currentColor" stroke-width="2.3" stroke-linecap="round"/>`;
-let lastSaid = "";
+// The guidance runs on its own clock: the speaker button only mutes and unmutes it. Unmuting picks up
+// where the voice would be by now (from the start of that word), not from the beginning.
+const talk = { text: "", base: 0, at: 0, u: null }; // `base` characters were read at time `at` (ms)
+let cps = 7; // characters per second at rate 0.92; tuned by every sentence the device finishes
+const talkPos = () => talk.base + ((performance.now() - talk.at) / 1000) * cps;
+function hush() { talk.u = null; try { speechSynthesis.cancel(); } catch {} }
+function speakFrom(i) {
+  hush();
+  talk.base = i; talk.at = performance.now();
+  if (!voiceOn || !("speechSynthesis" in window) || i >= talk.text.length) return;
+  try {
+    const part = talk.text.slice(i), u = new SpeechSynthesisUtterance(part), t0 = performance.now();
+    u.lang = "ko-KR"; u.rate = 0.92; talk.u = u;
+    u.onboundary = (e) => { if (talk.u === u) { talk.base = i + e.charIndex; talk.at = performance.now(); } }; // where the voice really is (where the device reports it)
+    u.onend = () => { if (talk.u !== u) return; const d = (performance.now() - t0) / 1000; if (d > 1 && part.length > 10) cps = Math.max(3, Math.min(14, cps * 0.6 + (part.length / d) * 0.4)); talk.u = null; };
+    speechSynthesis.speak(u);
+  } catch {}
+}
 function setVoice(on) {
   voiceOn = on; store.set("edu-voice", on ? "1" : "0"); // remembered: the next training / exam starts the same way
-  try { speechSynthesis.cancel(); } catch {}
   voiceBtn.innerHTML = `<svg viewBox="0 0 24 24" width="30" height="30" aria-hidden="true">${SPEAKER}${on ? "" : SLASH}</svg>`;
   voiceBtn.setAttribute("aria-pressed", String(on)); voiceBtn.setAttribute("aria-label", on ? "음성 안내 켜짐 (누르면 끔)" : "음성 안내 꺼짐 (누르면 켬)"); voiceBtn.title = on ? "음성 끄기" : "음성 켜기";
 }
-voiceBtn.onclick = () => { setVoice(!voiceOn); if (voiceOn && lastSaid) say(lastSaid); }; // turned back on: read the current guidance again right away
-function say(text) {
-  lastSaid = text;
-  if (!voiceOn || !("speechSynthesis" in window)) return;
-  try { speechSynthesis.cancel(); const u = new SpeechSynthesisUtterance(text); u.lang = "ko-KR"; u.rate = 0.92; speechSynthesis.speak(u); } catch {}
-}
+voiceBtn.onclick = () => {
+  setVoice(!voiceOn);
+  if (!voiceOn) { const p = talkPos(); hush(); talk.base = p; talk.at = performance.now(); return; } // muted: the clock keeps running
+  const p = Math.floor(talkPos());
+  if (p < talk.text.length) speakFrom(talk.text.lastIndexOf(" ", p) + 1); // unmuted mid-sentence: from the start of the current word
+};
+function say(text) { talk.text = text; speakFrom(0); }
 
 // ---------- login / signup ----------
 function showLogin(note = "") {
@@ -171,8 +188,8 @@ async function showMyRecords() {
 
 // ---------- training and exam in the simulator ----------
 let session = null;
-function enterSim() { lastSaid = ""; document.body.classList.add("easy"); app.hidden = true; coach.hidden = false; quitBtn.hidden = false; setVoice(voiceOn); voiceBtn.hidden = false; window.SIM?.resetCam(); document.querySelector("#stage")?.append(coach, quitBtn, voiceBtn); window.dispatchEvent(new Event("resize")); }
-function leaveSim() { document.body.classList.remove("easy"); coach.hidden = true; quitBtn.hidden = true; voiceBtn.hidden = true; try { speechSynthesis.cancel(); } catch {} window.dispatchEvent(new Event("resize")); }
+function enterSim() { talk.text = ""; hush(); document.body.classList.add("easy"); app.hidden = true; coach.hidden = false; quitBtn.hidden = false; setVoice(voiceOn); voiceBtn.hidden = false; window.SIM?.resetCam(); document.querySelector("#stage")?.append(coach, quitBtn, voiceBtn); window.dispatchEvent(new Event("resize")); }
+function leaveSim() { document.body.classList.remove("easy"); coach.hidden = true; quitBtn.hidden = true; voiceBtn.hidden = true; talk.text = ""; hush(); window.dispatchEvent(new Event("resize")); }
 quitBtn.onclick = () => {
   if (session?.kind === "exam" && quitBtn.dataset.sure !== "1") { quitBtn.dataset.sure = "1"; quitBtn.textContent = "중단하면 0점 기록 · 한 번 더 누르기"; setTimeout(() => { quitBtn.dataset.sure = ""; quitBtn.textContent = "그만하기"; }, 4000); return; }
   quitBtn.dataset.sure = ""; quitBtn.textContent = "그만하기";
