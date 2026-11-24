@@ -306,19 +306,11 @@ async function showAdmin() {
   $a("#out").onclick = () => { app.classList.remove("wide"); logout(); };
   $a("#qrBtn").onclick = showQR;
   $a("#allXls").onclick = exportAll;
-<<<<<<< HEAD
   $a("#simBtn").onclick = () => { app.hidden = true; document.body.classList.add("admin-sim"); window.SIM?.resetCam(); window.SIM?.render(); backBtn.textContent = "관리자 화면으로"; backBtn.hidden = false; backBtn.classList.remove("inflow"); document.querySelector("#stage")?.append(backBtn); window.dispatchEvent(new Event("resize")); };
   app.querySelectorAll("[data-tab]").forEach((b) => (b.onclick = () => { tab = b.dataset.tab; renderTab(); }));
   await loadDrivers();
 }
 backBtn.onclick = () => { backBtn.hidden = true; app.hidden = false; document.body.classList.remove("admin-sim"); window.SIM?.render(); free = false; document.body.classList.remove("free"); poke(); window.dispatchEvent(new Event("resize")); };
-=======
-  $a("#simBtn").onclick = () => { app.hidden = true; document.body.classList.add("admin-sim"); backBtn.textContent = "관리자 화면으로"; backBtn.hidden = false; backBtn.classList.remove("inflow"); document.querySelector("#stage")?.append(backBtn); window.dispatchEvent(new Event("resize")); };
-  app.querySelectorAll("[data-tab]").forEach((b) => (b.onclick = () => { tab = b.dataset.tab; renderTab(); }));
-  await loadDrivers();
-}
-backBtn.onclick = () => { backBtn.hidden = true; app.hidden = false; document.body.classList.remove("admin-sim"); free = false; document.body.classList.remove("free"); poke(); window.dispatchEvent(new Event("resize")); };
->>>>>>> c4aa52bab63a2c5e789f9e779fa50f496946e91e
 let free = false;
 async function openFree() {
   const SIM = await waitSim(); free = true;
