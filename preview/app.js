@@ -46,9 +46,19 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
 // voice guide (browser speech; quality depends on the device)
 let voiceOn = store.get("edu-voice") !== "0";
-function setVoice(on) { voiceOn = on; store.set("edu-voice", on ? "1" : "0"); if (!on) try { speechSynthesis.cancel(); } catch {} voiceBtn.textContent = on ? "🔊 음성 켜짐" : "🔇 음성 꺼짐"; voiceBtn.setAttribute("aria-pressed", String(on)); }
-voiceBtn.onclick = () => setVoice(!voiceOn);
+// speaker with two sound waves; off: the same speaker crossed by a slash
+const SPEAKER = `<path d="M2.5 9h4l5.5-4.5v15L6.5 15h-4z" fill="currentColor"/><path d="M15.2 8.6a4.8 4.8 0 0 1 0 6.8M18.3 5.5a9.2 9.2 0 0 1 0 13" fill="none" stroke="currentColor" stroke-width="2.3" stroke-linecap="round"/>`;
+const SLASH = `<path d="M3.5 3.5l17 17" stroke="var(--e-sheet)" stroke-width="5" stroke-linecap="round"/><path d="M3.5 3.5l17 17" stroke="currentColor" stroke-width="2.3" stroke-linecap="round"/>`;
+let lastSaid = "";
+function setVoice(on) {
+  voiceOn = on; store.set("edu-voice", on ? "1" : "0"); // remembered: the next training / exam starts the same way
+  try { speechSynthesis.cancel(); } catch {}
+  voiceBtn.innerHTML = `<svg viewBox="0 0 24 24" width="30" height="30" aria-hidden="true">${SPEAKER}${on ? "" : SLASH}</svg>`;
+  voiceBtn.setAttribute("aria-pressed", String(on)); voiceBtn.setAttribute("aria-label", on ? "음성 안내 켜짐 (누르면 끔)" : "음성 안내 꺼짐 (누르면 켬)"); voiceBtn.title = on ? "음성 끄기" : "음성 켜기";
+}
+voiceBtn.onclick = () => { setVoice(!voiceOn); if (voiceOn && lastSaid) say(lastSaid); }; // turned back on: read the current guidance again right away
 function say(text) {
+  lastSaid = text;
   if (!voiceOn || !("speechSynthesis" in window)) return;
   try { speechSynthesis.cancel(); const u = new SpeechSynthesisUtterance(text); u.lang = "ko-KR"; u.rate = 0.92; speechSynthesis.speak(u); } catch {}
 }
@@ -132,13 +142,12 @@ async function showHome() {
       <button class="big ghost" id="goFree" type="button">자유 시뮬레이터<small>기록 없이 마음대로 조작해 봅니다</small></button>
       <button class="big ghost" id="goRec" type="button">내 기록 보기</button>
     </div>
-    <div class="row-end"><label class="check"><input type="checkbox" id="voice" ${voiceOn ? "checked" : ""}> 음성 안내</label><button class="link" id="out" type="button">로그아웃</button></div>`);
+    <div class="row-end"><button class="link" id="out" type="button">로그아웃</button></div>`);
   $a("#goTrain").onclick = () => runSession("training");
   $a("#goExam").onclick = () => runSession("exam");
   $a("#goRec").onclick = showMyRecords;
   $a("#goFree").onclick = openFree;
   $a("#out").onclick = logout;
-  $a("#voice").onchange = (e) => setVoice(e.target.checked);
   try {
     const list = await rpc("my_attempts", { p_token: token });
     const ex = list.filter((a) => a.kind === "exam"), passed = ex.find((a) => a.passed);
@@ -162,7 +171,7 @@ async function showMyRecords() {
 
 // ---------- training and exam in the simulator ----------
 let session = null;
-function enterSim() { document.body.classList.add("easy"); app.hidden = true; coach.hidden = false; quitBtn.hidden = false; setVoice(voiceOn); voiceBtn.hidden = false; window.SIM?.resetCam(); document.querySelector("#stage")?.append(coach, quitBtn, voiceBtn); window.dispatchEvent(new Event("resize")); }
+function enterSim() { lastSaid = ""; document.body.classList.add("easy"); app.hidden = true; coach.hidden = false; quitBtn.hidden = false; setVoice(voiceOn); voiceBtn.hidden = false; window.SIM?.resetCam(); document.querySelector("#stage")?.append(coach, quitBtn, voiceBtn); window.dispatchEvent(new Event("resize")); }
 function leaveSim() { document.body.classList.remove("easy"); coach.hidden = true; quitBtn.hidden = true; voiceBtn.hidden = true; try { speechSynthesis.cancel(); } catch {} window.dispatchEvent(new Event("resize")); }
 quitBtn.onclick = () => {
   if (session?.kind === "exam" && quitBtn.dataset.sure !== "1") { quitBtn.dataset.sure = "1"; quitBtn.textContent = "중단하면 0점 기록 · 한 번 더 누르기"; setTimeout(() => { quitBtn.dataset.sure = ""; quitBtn.textContent = "그만하기"; }, 4000); return; }
