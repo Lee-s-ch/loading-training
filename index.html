@@ -115,7 +115,7 @@ header p { margin: 0; color: var(--muted); min-width: 0; }
 .pad button { font: 700 15px var(--font-body); border: 1px solid var(--line); border-radius: 10px; background: var(--surface); color: var(--ink); touch-action: none; user-select: none; -webkit-user-select: none; }
 .pad .u { grid-column: 2; }
 .pad .l { grid-column: 1; grid-row: 2; } .pad .d { grid-column: 2; grid-row: 2; } .pad .r { grid-column: 3; grid-row: 2; }
-@media (pointer: coarse) { .pad { display: grid; } .hint { display: none; } }
+@media (pointer: coarse) { .pad { display: grid; } .hint { display: none; } .views { display: none; } }
 @media (max-width: 600px) { .hud { top: auto; bottom: 56px; min-width: 130px; } .caption { top: 88px; font-size: 13px; } .banner { top: 132px; font-size: 14px; } }
 .keys { display: grid; grid-template-columns: auto 1fr; gap: 4px 8px; font-size: 12px; align-items: center; }
 .keys kbd { font: 700 11.5px var(--font-mono); border: 1px solid var(--line); border-bottom-width: 2px; border-radius: 4px; padding: 1px 6px; text-align: center; white-space: nowrap; }
@@ -244,7 +244,6 @@ legend { font-size: 13px; padding: 0; margin-bottom: 6px; }
         <button type="button" data-view="fp" aria-pressed="false">1인칭</button>
         <button type="button" data-view="lc" aria-pressed="false">하부 LC</button>
         <button type="button" data-view="work" aria-pressed="false" id="viewWork">상부 LC</button>
-        <button type="button" id="hq" aria-pressed="false" title="주변광 차폐와 고해상도 그림자. 느리면 끄세요">고품질</button>
       </div>
       <div class="hud" id="hud" aria-live="off">
         <span>인체 전위</span><b id="kv">0.0 kV</b><i id="mj">방전 시 0.00 mJ</i>
@@ -377,7 +376,7 @@ const TOPY = 3.43; // walkway height on top of the tank
 
 // ---------- renderer / scene ----------
 const renderer = new THREE.WebGLRenderer({ antialias: true, preserveDrawingBuffer: true });
-const LOWEND = matchMedia("(pointer: coarse)").matches; // phones and tablets: fewer pixels, smaller shadow map
+const LOWEND = matchMedia("(pointer: coarse)").matches, homeView = () => (LOWEND ? "follow" : "all"); // phones and tablets: fewer pixels, smaller shadow map
 renderer.setPixelRatio(Math.min(window.devicePixelRatio, LOWEND ? 1.5 : 2));
 renderer.shadowMap.enabled = true;
 renderer.shadowMap.type = THREE.PCFSoftShadowMap;
@@ -864,9 +863,16 @@ new GLTFLoader().load("tex/driver.glb", (g) => {
   YB.rest = YB.bones.hips.getWorldPosition(V(0, 0, 0)).y - driver.position.y;
 }, undefined, () => {});
 const _yb = new THREE.Vector3();
+const _q = new THREE.Quaternion(), _up = new THREE.Vector3(0, 1, 0);
 function ybFollow(holdingLever) { // copy the skeleton onto the hand-built joints
-  const B_ = YB.bones, at_ = (o, dy = 0) => o.getWorldPosition(_yb).add(V(0, dy, 0));
-  rig.position.y = B_.hips.getWorldPosition(_yb).y - driver.position.y - YB.rest + jump.h;
+  const B_ = YB.bones;
+  // Hands and feet are taken relative to the skeleton's hips, turned back by the hips' own turn (the ladder clips
+  // turn the body round by 180 degrees), then placed on the hand-built hips, which always face the driver's way.
+  const H = driver.worldToLocal(B_.hips.getWorldPosition(new THREE.Vector3()));
+  _q.copy(driver.getWorldQuaternion(new THREE.Quaternion())).invert().multiply(B_.hips.getWorldQuaternion(new THREE.Quaternion()));
+  const f = new THREE.Vector3(0, 0, 1).applyQuaternion(_q), yaw = Math.atan2(f.x, f.z);
+  const at_ = (o, dy = 0) => { const v = driver.worldToLocal(o.getWorldPosition(_yb)).sub(H).applyAxisAngle(_up, -yaw); v.y += dy; return driver.localToWorld(v.add(V(0, H.y, 0))); };
+  rig.position.y = H.y - YB.rest + jump.h;
   // a hand working on equipment keeps the hand-built reach, so it lands on the real handle or button
   const busyL = state.reachL && look.target, busyR = (state.reach && look.target) || holdingLever;
   if (!busyL) ik2(arms.L.sh, arms.L.el, at_(B_.hL), 0.3, 0.3, 1, 1);
@@ -1398,14 +1404,14 @@ const STEPS = {
   ],
   bottom: [
     { t: "고임목 설치 · 방전봉 터치", sub: "①②", run: () => [B.chock(true), B.rod()], done: () => pre(T.chock.on && state.rod) },
+    { t: "접지 밴드 착용", sub: "몸 먼저 접지 · 접속함에서 인출", isNew: true, run: () => [B.band(true)], done: () => pre(state.band === "skin") },
     { t: "접지 커넥터 연결", sub: "③ 녹색 점등 확인", run: () => [B.plug(true)], done: () => pre(vehicleOK()) },
-    { t: "접지 밴드 착용", sub: "접지 커넥터와 같은 접속함", isNew: true, run: () => [B.band(true)], done: () => pre(state.band === "skin") },
     { t: "유증기 회수 호스 체결", sub: "④", run: () => [B.vapor(true)], done: () => pre(T.vapor.on) },
     { t: "LC 회차선택", sub: "⑤ 차량 · 인체 접지 필요", run: () => [B.lc()], done: () => pre(state.lc) },
     { t: "커플러 장착", sub: "⑥ 잔량 확인", run: () => [B.arm(true)], done: () => pre(T.arm.on) },
     { t: "물량 적재", sub: "⑦ LC 시작", run: () => [B.lc()], done: () => state.loaded },
     { t: "커플러 · 유증기 회수 호스 해체", sub: "⑧ 유증기가 나오는 시점", run: () => [B.stop(), B.arm(false), B.vapor(false)], done: () => state.loaded && !T.arm.on && !T.vapor.on },
-    { t: "밴드 해제 · 접지 해체 · 고임목 원위치", sub: "⑨⑩ 고임목은 마지막", run: () => [B.band(false), B.plug(false), B.chock(false), B.home()], done: () => state.loaded && !worn() && !T.chock.on && !vehicleOK() },
+    { t: "접지 해체 · 밴드 해제 · 고임목 원위치", sub: "⑨ 밴드는 접지 해체 뒤 · ⑩ 고임목은 마지막", run: () => [B.plug(false), B.band(false), B.chock(false), B.home()], done: () => state.loaded && !worn() && !T.chock.on && !vehicleOK() },
   ],
 };
 const stepEnabled = (i) => !fx.fire.on && truckHome() && !busy() && !state.loading && !scen.on && !STEPS[mode][i].done() && STEPS[mode].slice(0, i).every((s) => s.done());
@@ -1530,7 +1536,7 @@ const look = { target: null };
 const narrowK = () => (camera.aspect < 1.3 ? Math.min(2.2, Math.pow(1.3 / camera.aspect, 0.85)) : 1);
 function pressView(name) { for (const b of document.querySelectorAll("[data-view]")) b.setAttribute("aria-pressed", String(b.dataset.view === name)); }
 function setFp(on) {
-  controls.enabled = !on;
+  controls.enabled = !on && !LOWEND;
   camera.fov = on ? 72 : 42; camera.updateProjectionMatrix();
   headParts.forEach((m) => (m.visible = !on));
   labelsEl.hidden = on || drive.on; $("cross").hidden = !on || drive.on;
@@ -1582,6 +1588,7 @@ function fpCam(dt) {
 }
 document.querySelectorAll("[data-view]").forEach((b) => b.addEventListener("click", () => goView(b.dataset.view)));
 controls.addEventListener("start", () => { if (currentView === "follow" || tween) { tween = null; currentView = "free"; pressView(""); } });
+if (LOWEND) controls.enabled = false; // phones and tablets: the view stays fixed behind the driver (no drag, no pinch)
 
 // ---------- reset / mode ----------
 function resetScene(m) {
@@ -1604,14 +1611,14 @@ function resetScene(m) {
 ui.modes.forEach((r) => r.addEventListener("change", () => {
   resetScene(r.value);
   log(`출하 방식: ${r.value === "top" ? "상부 출하 (등유·경유)" : "하부 출하 (휘발유)"} · 작업 대기`);
-  goView(currentView === "free" ? "all" : currentView, true); render();
+  goView(currentView === "free" ? homeView() : currentView, true); render();
 }));
-$("reset").addEventListener("click", () => { resetScene(mode); log("처음 상태로: 작업 대기"); goView(currentView === "fp" ? "fp" : "all"); render(); });
+$("reset").addEventListener("click", () => { resetScene(mode); log("처음 상태로: 작업 대기"); goView(currentView === "fp" ? "fp" : homeView()); render(); });
 
 // ---------- screens and the sign ----------
 const SIGN = {
   top: ["1. 고임목 설치", "2. 정전기 해소 (방전봉 터치)", "3. 차량 접지", "4. 차량 배수 밸브 차단", "5. 탱크 격실 밸브 차단", "6. 차량 상부 안전벨트 연결고리 체결", "+ 상부 LC에서 접지 밴드 착용", "7. 로딩암 핸드레버를 당김", "8. 핸드레버를 계속 잡고 출하"],
-  bottom: ["1. 고임목 설치", "2. 정전기 해소 (방전봉 터치)", "3. 접지 체결 (녹색점등 확인)", "+ 접지 밴드 착용", "4. 유증기 회수 호스 체결", "5. 회차선택", "6. 커플러 장착 (잔량확인)", "7. 물량 적재", "8. 커플러·유증기 회수 호스 해체", "9. 접지 해체", "10. 고임목 원위치"],
+  bottom: ["1. 고임목 설치", "2. 정전기 해소 (방전봉 터치)", "+ 접지 밴드 착용", "3. 접지 체결 (녹색점등 확인)", "4. 유증기 회수 호스 체결", "5. 회차선택", "6. 커플러 장착 (잔량확인)", "7. 물량 적재", "8. 커플러·유증기 회수 호스 해체", "9. 접지 해체", "+ 접지 밴드 해제", "10. 고임목 원위치"],
 };
 function drawSign() {
   const g = sign.g;
@@ -1765,7 +1772,7 @@ function moveDriver(dt) {
   if (currentView === "fp") return;
   const delta = driver.position.clone().sub(from);
   camera.position.add(delta); controls.target.add(delta); // the camera keeps its angle and travels with the driver
-  if (currentView !== "free") { currentView = "free"; pressView(""); tween = null; }
+  if (currentView !== "free" && !LOWEND) { currentView = "free"; pressView(""); tween = null; }
 }
 
 // doing something by hand: turn to it, reach, then apply
@@ -2229,7 +2236,7 @@ function startScenario(kind) {
   $("infoTitle").textContent = kind === "A" ? "정전기 화재 시연 · 밴드 미착용" : "정전기 화재 시연 · 밴드 착용";
   $("infoBody").textContent = FIRE_NOTE[mode];
   $("infoSpec").textContent = "인체 150 pF · E = ½CV² · 1.6 kV 이상이면 0.2 mJ 초과";
-  if (currentView === "fp") goView("all", true);
+  if (currentView === "fp") goView(homeView(), true);
   currentView = "free"; pressView("");
   tween = { from: camera.position.clone(), fromT: controls.target.clone(), to: sp.view.pos, toT: sp.view.target, t: 0 };
   queue.push(
@@ -2442,7 +2449,6 @@ $("driveIn").addEventListener("click", () => {   // a fresh arrival: start at th
 });
 $("driveBoard").addEventListener("click", boardTruck);
 
-try { if (localStorage.getItem("sim-hq") === "1") setHQ(true); } catch {}
 // a small handle for an outer training app (login, guided steps, exams); unused when the page runs alone
 window.SIM = { STEPS, state, T, fx, busy, resetScene, runStep, goView, stepEnabled, mode: () => mode, setAuto, log, fightFire };
 // ---------- start ----------
@@ -2474,27 +2480,22 @@ $("vsplit").addEventListener("dblclick", () => { delete lay.pw; applyLayout(); t
 $("hsplit").addEventListener("dblclick", () => { delete lay.dh; applyLayout(); try { localStorage.setItem("sim-layout", JSON.stringify(lay)); } catch {} });
 addEventListener("resize", applyLayout); applyLayout();
 let ZS = 1;
-let composer = null, hq = false;
-function setHQ(on) {
-  hq = on; $("hq").setAttribute("aria-pressed", String(on));
-  if (on && !composer) {
-    composer = new EffectComposer(renderer); composer.addPass(new RenderPass(scene, camera));
-    const ao = new GTAOPass(scene, camera, stage.clientWidth, stage.clientHeight, undefined, { radius: 0.6, distanceExponent: 1.5, thickness: 1, scale: 1.5, samples: 16 }, { lumaPhi: 10, depthPhi: 2, normalPhi: 3, radius: 8, rings: 2, samples: 16 });
-    composer.addPass(ao); composer.addPass(new OutputPass());
-  }
-  composer?.setSize(stage.clientWidth, stage.clientHeight);
-  sun.shadow.mapSize.set(on ? 4096 : 2048, on ? 4096 : 2048); sun.shadow.map?.dispose(); sun.shadow.map = null;
-  try { localStorage.setItem("sim-hq", on ? "1" : "0"); } catch {}
-}
-$("hq").addEventListener("click", () => setHQ(!hq));
-function resize() { const w = stage.clientWidth, h = stage.clientHeight; composer?.setSize(w, h);
+// one quality only: ambient occlusion and sharp shadows always on (phones keep a smaller shadow map)
+const hq = true;
+const composer = new EffectComposer(renderer); composer.addPass(new RenderPass(scene, camera));
+composer.addPass(new GTAOPass(scene, camera, stage.clientWidth, stage.clientHeight, undefined, { radius: 0.6, distanceExponent: 1.5, thickness: 1, scale: 1.5, samples: 16 }, { lumaPhi: 10, depthPhi: 2, normalPhi: 3, radius: 8, rings: 2, samples: 16 }));
+composer.addPass(new OutputPass());
+sun.shadow.mapSize.set(LOWEND ? 2048 : 4096, LOWEND ? 2048 : 4096); sun.shadow.map?.dispose(); sun.shadow.map = null;
+let lastWH = ""; // resizing a canvas wipes it, so only resize when the size really changed
+function resize() { const w = stage.clientWidth, h = stage.clientHeight; if (lastWH === w + "x" + h) return; lastWH = w + "x" + h; composer?.setSize(w, h);
   ZS = Math.max(1, Math.min(2, Math.min(w / 1000, h / 600))); rootS.setProperty("--zs", ZS.toFixed(3)); renderer.setSize(w, h, false); camera.aspect = w / h; camera.updateProjectionMatrix(); }
 new ResizeObserver(resize).observe(stage); resize();
-goView("all", true);
+goView(homeView(), true); // phones and tablets stay in the third-person view (no view buttons)
 
 const tmp = new THREE.Vector3();
 let last = performance.now(), flowT = 0, shownQ = -1;
 function frame(nowMs) {
+  if (LOWEND && currentView === "free" && !tween && !fx.fire.on && !scen.on && !drive.on) goView("follow"); // a fire or demo close-up is over: back behind the driver
   const dt = Math.min(0.05, (nowMs - last) / 1000); last = nowMs;
   stepAction(dt);
   autoTick(dt);

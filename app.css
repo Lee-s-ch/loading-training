@@ -114,11 +114,10 @@ body.easy canvas { pointer-events: none; }
 #quit, #backAdmin { position: absolute; top: max(10px, env(safe-area-inset-top, 0px)); left: max(10px, env(safe-area-inset-left, 0px)); z-index: 21;
   font: 700 17px var(--e-font); padding: 10px 16px; border-radius: 10px; border: 1px solid var(--e-line); background: var(--e-sheet); color: var(--e-ink); cursor: pointer; }
 #backAdmin { left: auto; right: max(10px, env(safe-area-inset-right, 0px)); top: auto; bottom: max(10px, env(safe-area-inset-bottom, 0px)); }
-/* free simulator on a phone: the 3D view stays on top while the controls scroll underneath */
+/* free simulator on a phone: 3D view first, then the back button and the controls, all in one scrolling column (nothing floats over the 3D view) */
 @media (max-width: 600px) {
   body.free header { display: none; }
-  body.free .stage { position: fixed; top: 0; left: 0; right: 0; height: 56dvh !important; z-index: 10; border-radius: 0; border: 0; }
-  body.free .main { padding-top: 56dvh; }
-  body.free #backAdmin { position: static; width: 100%; margin: 10px 0; min-height: 52px; background: var(--e-accent); color: var(--e-accent-ink); border: 0; }
+  body.free .stage { height: 56vh !important; height: 56svh !important; } /* svh: the small-viewport height does not change while the address bar slides, so scrolling never resizes (and blanks) the 3D view */
 }
+#backAdmin.inflow { position: static; width: 100%; margin: 10px 0; min-height: 52px; background: var(--e-accent); color: var(--e-accent-ink); border: 0; }
 @media (prefers-reduced-motion: reduce) { * { scroll-behavior: auto !important; } }

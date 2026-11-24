@@ -303,7 +303,7 @@ async function showAdmin() {
   $a("#out").onclick = () => { app.classList.remove("wide"); logout(); };
   $a("#qrBtn").onclick = showQR;
   $a("#allXls").onclick = exportAll;
-  $a("#simBtn").onclick = () => { app.hidden = true; backBtn.textContent = "관리자 화면으로"; backBtn.hidden = false; document.querySelector("#stage")?.append(backBtn); window.dispatchEvent(new Event("resize")); };
+  $a("#simBtn").onclick = () => { app.hidden = true; backBtn.textContent = "관리자 화면으로"; backBtn.hidden = false; backBtn.classList.remove("inflow"); document.querySelector("#stage")?.append(backBtn); window.dispatchEvent(new Event("resize")); };
   app.querySelectorAll("[data-tab]").forEach((b) => (b.onclick = () => { tab = b.dataset.tab; renderTab(); }));
   await loadDrivers();
 }
@@ -313,8 +313,9 @@ async function openFree() {
   const SIM = await waitSim(); free = true;
   SIM.setAuto(false); SIM.resetScene(modeOf(me.fuel)); SIM.goView("follow");
   app.hidden = true; backBtn.textContent = "처음 화면으로"; backBtn.hidden = false; document.body.classList.add("free");
-  if (matchMedia("(max-width: 600px)").matches) document.querySelector(".dock")?.before(backBtn); // phone: 3D on top, a big button and the controls scroll below
-  else document.querySelector("#stage")?.append(backBtn);
+  const inflow = matchMedia("(max-width: 600px), (pointer: coarse)").matches; // phones and tablets: the button sits under the 3D view, never on it
+  backBtn.classList.toggle("inflow", inflow);
+  if (inflow) document.querySelector(".dock")?.before(backBtn); else document.querySelector("#stage")?.append(backBtn);
   window.dispatchEvent(new Event("resize"));
 }
 let adminTimer = 0;
