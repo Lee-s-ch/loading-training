@@ -905,6 +905,12 @@ function ybPose(dt, walking, onLadder, holdingLever) {
     LADDER_CLIP.down.set(S.ladderFoot, "climbStart").set(S.ladderMount, "climb").set(S.ladderTop, "climbTop");
   }
   const clip = w && Math.abs(dy) > 0.01 ? (dy > 0 ? LADDER_CLIP.up : LADDER_CLIP.down).get(w) : null;
+  if (clip || onLadder) { // the ladder keeps the hand-built climb (hands and feet on the rungs), not the Mixamo clips
+    ybPlay("idle"); YB.mixer.update(dt);
+    for (const sd of ["L", "R"]) { arms[sd].sh.rotation.y = 0; arms[sd].el.rotation.y = sd === "L" ? -0.45 : 0.45; }
+    for (let i = 0; i < 2; i++) { legs[i].rotation.y = 0; knees[i].rotation.y = 0; const an = knees[i].children.find((c) => c.isGroup); if (an) an.quaternion.identity(); }
+    return;
+  }
   const reaching = state.reach || state.reachL || holdingLever;
   if (clip) {
     const a = YB.acts[clip], dur = a.getClip().duration, rev = dy < 0;
@@ -1366,8 +1372,8 @@ function barriers() {
   return out;
 }
 const go = walk;
-const climbSeq = () => [go(S.rear), walk(S.ladderFoot), face(V(0, 0, -0.45)), walk(S.ladderMount, 0.5), walk(S.ladderTop, 0.75), walk(S.ladderExit, 0.23), walk(S.deck, 1.0), now_(() => { state.onTop = true; log("후면 사다리로 유조차 위에 오름"); })];
-const descendSeq = () => [walk(S.deck), walk(S.ladderExit, 0.8), face(V(-10, TOPY, -0.45)), walk(S.ladderTop, 0.23, true), walk(S.ladderMount, 0.75, true), walk(S.ladderFoot, 0.5, true), now_(() => { state.onTop = false; log("유조차에서 내려옴"); }), walk(S.rear)];
+const climbSeq = () => [go(S.rear), walk(S.ladderFoot), face(V(0, 0, -0.45)), walk(S.ladderMount, 0.6), walk(S.ladderTop, 0.75), walk(S.ladderExit, 0.5), walk(S.deck, 1.0), now_(() => { state.onTop = true; log("후면 사다리로 유조차 위에 오름"); })];
+const descendSeq = () => [walk(S.deck), walk(S.ladderExit, 0.8), face(V(-10, TOPY, -0.45)), walk(S.ladderTop, 0.5, true), walk(S.ladderMount, 0.75, true), walk(S.ladderFoot, 0.6, true), now_(() => { state.onTop = false; log("유조차에서 내려옴"); }), walk(S.rear)];
 const down = () => dyn(() => (state.onTop ? descendSeq() : []));
 const up = () => dyn(() => (state.onTop ? [] : [B.harness(true), B.clip(true), ...climbSeq()]));
 // go to a spot, turn, reach, then apply fn
