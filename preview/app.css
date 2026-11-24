@@ -121,3 +121,5 @@ body.easy canvas { pointer-events: none; }
 }
 #backAdmin.inflow { position: static; width: 100%; margin: 10px 0; min-height: 52px; background: var(--e-accent); color: var(--e-accent-ink); border: 0; }
 @media (prefers-reduced-motion: reduce) { * { scroll-behavior: auto !important; } }
+/* truck boarding and driving: only in the admin's simulator screen (hidden, not removed) */
+body:not(.admin-sim) .admin-only { display: none !important; }

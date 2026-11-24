@@ -114,7 +114,7 @@ function showSignup() {
     } catch (e) { msg(errText(e)); } finally { busyBtn(b, false); }
   };
 }
-async function logout() { const t = token; token = null; me = null; sess.set("edu-token", null); showLogin(); try { if (t) await rpc("logout", { p_token: t }); } catch {} }
+async function logout() { document.body.classList.remove("admin-sim"); const t = token; token = null; me = null; sess.set("edu-token", null); showLogin(); try { if (t) await rpc("logout", { p_token: t }); } catch {} }
 
 // ---------- driver home and records ----------
 async function showHome() {
@@ -303,11 +303,11 @@ async function showAdmin() {
   $a("#out").onclick = () => { app.classList.remove("wide"); logout(); };
   $a("#qrBtn").onclick = showQR;
   $a("#allXls").onclick = exportAll;
-  $a("#simBtn").onclick = () => { app.hidden = true; backBtn.textContent = "관리자 화면으로"; backBtn.hidden = false; backBtn.classList.remove("inflow"); document.querySelector("#stage")?.append(backBtn); window.dispatchEvent(new Event("resize")); };
+  $a("#simBtn").onclick = () => { app.hidden = true; document.body.classList.add("admin-sim"); backBtn.textContent = "관리자 화면으로"; backBtn.hidden = false; backBtn.classList.remove("inflow"); document.querySelector("#stage")?.append(backBtn); window.dispatchEvent(new Event("resize")); };
   app.querySelectorAll("[data-tab]").forEach((b) => (b.onclick = () => { tab = b.dataset.tab; renderTab(); }));
   await loadDrivers();
 }
-backBtn.onclick = () => { backBtn.hidden = true; app.hidden = false; free = false; document.body.classList.remove("free"); poke(); window.dispatchEvent(new Event("resize")); };
+backBtn.onclick = () => { backBtn.hidden = true; app.hidden = false; document.body.classList.remove("admin-sim"); free = false; document.body.classList.remove("free"); poke(); window.dispatchEvent(new Event("resize")); };
 let free = false;
 async function openFree() {
   const SIM = await waitSim(); free = true;

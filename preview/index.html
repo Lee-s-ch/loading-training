@@ -273,7 +273,7 @@ legend { font-size: 13px; padding: 0; margin-bottom: 6px; }
         <h3 id="infoTitle"></h3>
         <p id="infoBody"></p>
         <div class="spec" id="infoSpec"></div>
-        <p class="howto"><b>조작</b> W A S D 이동 · Shift 달리기 · Space 점프 · 클릭 또는 E 설비 조작 · 드래그 시점 회전 · 운전 중 W 가속 · S 제동/후진 · A D 조향 · E 하차</p>
+        <p class="howto"><b>조작</b> W A S D 이동 · Shift 달리기 · Space 점프 · 클릭 또는 E 설비 조작 · 드래그 시점 회전<span class="admin-only"> · 운전 중 W 가속 · S 제동/후진 · A D 조향 · E 하차</span></p>
         <div class="hold" id="hold"></div>
       </div>
       <div class="card logc">
@@ -326,7 +326,7 @@ legend { font-size: 13px; padding: 0; margin-bottom: 6px; }
       </div>
 
 
-    <div class="card">
+    <div class="card admin-only" id="driveCard">
       <h2>유조차 운전</h2>
       <div class="fire-btns">
         <button type="button" class="fbtn good" id="driveIn">입구에서 진입<small>정지선 정차 연습</small></button>
@@ -1544,7 +1544,7 @@ function select(key) {
 }
 
 // ---------- camera: overview, follow, first person ----------
-let tween = null, currentView = "all";
+let tween = null, currentView = "all", camZoom = 1; // camZoom: wheel / pinch distance of the view behind the driver
 const fp = { yaw: 0, pitch: -0.1, dragAt: -1e9 };
 const look = { target: null };
 const narrowK = () => (camera.aspect < 1.3 ? Math.min(2.2, Math.pow(1.3 / camera.aspect, 0.85)) : 1);
@@ -1573,7 +1573,7 @@ function goView(name, instant = false) {
 function followCam(a) {
   const p = driver.position, high = p.y > 1;
   const target = p.clone().add(V(0, 1.05, 0));
-  const off = (high ? V(2.3, 0.85, -2.3) : p.x > 6.45 ? V(2.6, 1.6, -1.6) : V(-2.9, 1.6, -0.2)).multiplyScalar(narrowK());
+  const off = (high ? V(2.3, 0.85, -2.3) : p.x > 6.45 ? V(2.6, 1.6, -1.6) : V(-2.9, 1.6, -0.2)).multiplyScalar(narrowK() * camZoom);
   const pos = target.clone().add(off);
   if (!high && p.x <= 6.45) pos.z = Math.max(-2.75, Math.min(-1.75, pos.z)); // stay in the lane between island and truck
   controls.target.lerp(target, a); camera.position.lerp(pos, a);
@@ -1602,7 +1602,16 @@ function fpCam(dt) {
 }
 document.querySelectorAll("[data-view]").forEach((b) => b.addEventListener("click", () => goView(b.dataset.view)));
 controls.addEventListener("start", () => { if (currentView === "follow" || tween) { tween = null; currentView = "free"; pressView(""); } });
-if (LOWEND) controls.enabled = false; // phones and tablets: the view stays fixed behind the driver (no drag, no pinch)
+if (LOWEND) controls.enabled = false; // phones and tablets: the view stays behind the driver (no drag; two-finger pinch zooms, below)
+// while the driver acts on his own (auto play, one step, a guided lesson) the view stays behind him: no turning, only zoom (wheel, pinch)
+const autoCam = () => !drive.on && !fx.fire.on && !scen.on && (autoplay || busy());
+function zoomBy(f) {
+  if (currentView === "fp") return;
+  if (currentView === "follow" && !tween) { camZoom = Math.max(0.45, Math.min(2.6, camZoom * f)); return; }
+  const d = camera.position.clone().sub(controls.target);
+  camera.position.copy(controls.target).add(d.setLength(Math.max(controls.minDistance, Math.min(controls.maxDistance, d.length() * f))));
+}
+canvas.addEventListener("wheel", (ev) => { if (!autoCam() || currentView === "fp") return; ev.preventDefault(); zoomBy(Math.exp(ev.deltaY * 0.0012)); }, { passive: false });
 
 // ---------- reset / mode ----------
 function resetScene(m) {
@@ -1926,6 +1935,17 @@ canvas.addEventListener("pointerup", (ev) => {
   if (!downAt || Math.hypot(ev.clientX - downAt[0], ev.clientY - downAt[1]) > 5) return;
   const it = pick(ev); if (it) tryItem(it);
 });
+// two-finger pinch: always on phones and tablets, and on any touch screen while the view is held behind the driver
+const touches = new Map(); let pinch0 = 0;
+const spread = () => { const [a, b] = [...touches.values()]; return Math.hypot(a[0] - b[0], a[1] - b[1]); };
+canvas.addEventListener("pointerdown", (ev) => { if (ev.pointerType !== "touch") return; touches.set(ev.pointerId, [ev.clientX, ev.clientY]); if (touches.size === 2) { pinch0 = spread(); downAt = null; } }); // a pinch is not a tap
+canvas.addEventListener("pointermove", (ev) => {
+  if (!touches.has(ev.pointerId)) return; touches.set(ev.pointerId, [ev.clientX, ev.clientY]);
+  if (touches.size !== 2 || !(LOWEND || autoCam())) return;
+  const s = spread(); if (pinch0 > 0 && s > 0) zoomBy(pinch0 / s); pinch0 = s;
+});
+const unpinch = (ev) => { touches.delete(ev.pointerId); pinch0 = 0; };
+window.addEventListener("pointerup", unpinch); window.addEventListener("pointercancel", unpinch);
 canvas.tabIndex = 0;
 canvas.setAttribute("aria-label", "3D 장면. W A S D로 기사 이동, E로 상호작용");
 const typing = (el) => el && (/^(INPUT|TEXTAREA|SELECT)$/.test(el.tagName) || el.isContentEditable || !!el.closest?.("#app:not([hidden]), .qr-full")); // never steal keys from a form or the training app
@@ -2528,6 +2548,9 @@ function frame(nowMs) {
   const qStep = Math.floor(state.progress * 80);
   if (qStep !== shownQ) { shownQ = qStep; screensDirty = true; }
   if (screensDirty) { screensDirty = false; drawScreens(); }
+  const held = autoCam(); // the driver acts on his own: third person behind him, zoom only
+  if (held && currentView !== "follow") goView("follow");
+  controls.enabled = !LOWEND && currentView !== "fp" && !held;
   if (currentView === "fp") { if (drive.on) cabCam(); else fpCam(dt); }
   else {
     if (tween) {
