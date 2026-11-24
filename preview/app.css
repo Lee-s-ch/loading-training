@@ -113,8 +113,8 @@ body.easy .stage { height: calc(100dvh - 20px) !important; border-radius: 0; }
 #quit, #backAdmin { position: absolute; top: max(10px, env(safe-area-inset-top, 0px)); left: max(10px, env(safe-area-inset-left, 0px)); z-index: 21;
   font: 700 17px var(--e-font); padding: 10px 16px; border-radius: 10px; border: 1px solid var(--e-line); background: var(--e-sheet); color: var(--e-ink); cursor: pointer; }
 #voiceBtn { position: absolute; top: max(10px, env(safe-area-inset-top, 0px)); right: max(10px, env(safe-area-inset-right, 0px)); z-index: 21;
-  font: 700 17px var(--e-font); padding: 10px 16px; border-radius: 10px; border: 1px solid var(--e-line); background: var(--e-sheet); color: var(--e-ink); cursor: pointer; }
-#voiceBtn[aria-pressed="false"] { color: var(--e-muted); }
+  width: 48px; height: 48px; padding: 0; display: grid; place-items: center; border-radius: 10px; border: 1px solid var(--e-line); background: var(--e-sheet); color: var(--e-ink); cursor: pointer; }
+#voiceBtn svg { display: block; }
 @media (min-width: 601px) { body.easy .hud { top: 64px; } } /* under the voice button */
 #backAdmin { left: auto; right: max(10px, env(safe-area-inset-right, 0px)); top: auto; bottom: max(10px, env(safe-area-inset-bottom, 0px)); }
 /* free simulator on a phone: 3D view first, then the back button and the controls, all in one scrolling column (nothing floats over the 3D view) */
