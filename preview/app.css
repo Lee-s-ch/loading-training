@@ -117,7 +117,7 @@ body.easy canvas { pointer-events: none; }
 /* free simulator on a phone: 3D view first, then the back button and the controls, all in one scrolling column (nothing floats over the 3D view) */
 @media (max-width: 600px) {
   body.free header { display: none; }
-  body.free .stage { height: 56dvh !important; }
+  body.free .stage { height: 56vh !important; height: 56svh !important; } /* svh: the small-viewport height does not change while the address bar slides, so scrolling never resizes (and blanks) the 3D view */
 }
 #backAdmin.inflow { position: static; width: 100%; margin: 10px 0; min-height: 52px; background: var(--e-accent); color: var(--e-accent-ink); border: 0; }
 @media (prefers-reduced-motion: reduce) { * { scroll-behavior: auto !important; } }

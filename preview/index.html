@@ -1536,7 +1536,7 @@ const look = { target: null };
 const narrowK = () => (camera.aspect < 1.3 ? Math.min(2.2, Math.pow(1.3 / camera.aspect, 0.85)) : 1);
 function pressView(name) { for (const b of document.querySelectorAll("[data-view]")) b.setAttribute("aria-pressed", String(b.dataset.view === name)); }
 function setFp(on) {
-  controls.enabled = !on;
+  controls.enabled = !on && !LOWEND;
   camera.fov = on ? 72 : 42; camera.updateProjectionMatrix();
   headParts.forEach((m) => (m.visible = !on));
   labelsEl.hidden = on || drive.on; $("cross").hidden = !on || drive.on;
@@ -1588,6 +1588,7 @@ function fpCam(dt) {
 }
 document.querySelectorAll("[data-view]").forEach((b) => b.addEventListener("click", () => goView(b.dataset.view)));
 controls.addEventListener("start", () => { if (currentView === "follow" || tween) { tween = null; currentView = "free"; pressView(""); } });
+if (LOWEND) controls.enabled = false; // phones and tablets: the view stays fixed behind the driver (no drag, no pinch)
 
 // ---------- reset / mode ----------
 function resetScene(m) {
@@ -1771,7 +1772,7 @@ function moveDriver(dt) {
   if (currentView === "fp") return;
   const delta = driver.position.clone().sub(from);
   camera.position.add(delta); controls.target.add(delta); // the camera keeps its angle and travels with the driver
-  if (currentView !== "free") { currentView = "free"; pressView(""); tween = null; }
+  if (currentView !== "free" && !LOWEND) { currentView = "free"; pressView(""); tween = null; }
 }
 
 // doing something by hand: turn to it, reach, then apply
@@ -2485,7 +2486,8 @@ const composer = new EffectComposer(renderer); composer.addPass(new RenderPass(s
 composer.addPass(new GTAOPass(scene, camera, stage.clientWidth, stage.clientHeight, undefined, { radius: 0.6, distanceExponent: 1.5, thickness: 1, scale: 1.5, samples: 16 }, { lumaPhi: 10, depthPhi: 2, normalPhi: 3, radius: 8, rings: 2, samples: 16 }));
 composer.addPass(new OutputPass());
 sun.shadow.mapSize.set(LOWEND ? 2048 : 4096, LOWEND ? 2048 : 4096); sun.shadow.map?.dispose(); sun.shadow.map = null;
-function resize() { const w = stage.clientWidth, h = stage.clientHeight; composer?.setSize(w, h);
+let lastWH = ""; // resizing a canvas wipes it, so only resize when the size really changed
+function resize() { const w = stage.clientWidth, h = stage.clientHeight; if (lastWH === w + "x" + h) return; lastWH = w + "x" + h; composer?.setSize(w, h);
   ZS = Math.max(1, Math.min(2, Math.min(w / 1000, h / 600))); rootS.setProperty("--zs", ZS.toFixed(3)); renderer.setSize(w, h, false); camera.aspect = w / h; camera.updateProjectionMatrix(); }
 new ResizeObserver(resize).observe(stage); resize();
 goView(homeView(), true); // phones and tablets stay in the third-person view (no view buttons)
@@ -2493,6 +2495,7 @@ goView(homeView(), true); // phones and tablets stay in the third-person view (n
 const tmp = new THREE.Vector3();
 let last = performance.now(), flowT = 0, shownQ = -1;
 function frame(nowMs) {
+  if (LOWEND && currentView === "free" && !tween && !fx.fire.on && !scen.on && !drive.on) goView("follow"); // a fire or demo close-up is over: back behind the driver
   const dt = Math.min(0.05, (nowMs - last) / 1000); last = nowMs;
   stepAction(dt);
   autoTick(dt);
