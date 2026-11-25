@@ -138,9 +138,9 @@ function showSignup() {
     if ($a("#sw").value !== $a("#sw2").value) return msg("비밀번호 두 칸이 서로 다릅니다.");
     const b = ev.submitter; busyBtn(b, true);
     try {
-      await rpc("signup", { p_plate: $a("#sp").value, p_pw: $a("#sw").value, p_name: $a("#sn").value, p_company: $a("#sc").value,
+      const r = await rpc("signup", { p_plate: $a("#sp").value, p_pw: $a("#sw").value, p_name: $a("#sn").value, p_company: $a("#sc").value,
         p_fuel: app.querySelector('input[name="fuel"]:checked').value, p_consent: $a("#agree").checked });
-      showLogin("가입 신청을 받았습니다. 관리자 승인 뒤 로그인하세요.");
+      showLogin(r?.status === "approved" ? "가입이 완료되었습니다. 바로 로그인하세요." : "가입 신청을 받았습니다. 관리자 승인 뒤 로그인하세요."); // approved at once while the admin's auto approval is on
     } catch (e) { msg(errText(e)); } finally { busyBtn(b, false); }
   };
 }
@@ -324,6 +324,8 @@ async function showAdmin() {
   screen(`
     <div class="admin-head"><div><p class="eyebrow">관리자 · ${esc(me.name)}</p><h1>출하 안전 교육 관리</h1></div>
       <div class="admin-actions"><button class="btn" id="qrBtn" type="button">접속 QR 코드</button><button class="btn" id="allXls" type="button">전체 기록 엑셀</button><button class="btn" id="simBtn" type="button">시뮬레이터 상세 화면</button><button class="link" id="out" type="button">로그아웃</button></div></div>
+    <label class="auto-ok" id="autoOkRow"><span class="switch"><input type="checkbox" id="autoOk" role="switch" disabled><span></span></span>
+      <span><b>가입 자동 승인</b> <small id="autoOkNote">불러오는 중…</small></span></label>
     <div class="tabs" role="tablist">
       <button role="tab" data-tab="pending" type="button">승인 대기</button><button role="tab" data-tab="all" type="button">전체 기사</button><button role="tab" data-tab="passed" type="button">합격자 명단</button><button role="tab" data-tab="stats" type="button">오답 통계</button>
     </div>
@@ -332,6 +334,14 @@ async function showAdmin() {
   $a("#out").onclick = () => { app.classList.remove("wide"); logout(); };
   $a("#qrBtn").onclick = showQR;
   $a("#allXls").onclick = exportAll;
+  const autoOk = $a("#autoOk"), autoNote = $a("#autoOkNote"); // demo switch: new sign-ups skip approval; stored on the server, so it stays on after this screen closes
+  const showAuto = (on) => { autoOk.checked = on; $a("#autoOkRow").classList.toggle("on", on); autoNote.textContent = on ? "켜짐 · 새로 가입하면 승인 없이 바로 이용합니다 (시연용, 끝나면 꺼 주세요)" : "꺼짐 · 새 가입은 관리자 승인 뒤 이용합니다"; };
+  rpc("admin_settings", { p_token: token }).then((st) => { showAuto(!!st?.auto_approve); autoOk.disabled = false; }).catch((e) => { autoNote.textContent = errText(e); });
+  autoOk.onchange = async () => {
+    const want = autoOk.checked; autoOk.disabled = true;
+    try { showAuto(!!(await rpc("admin_set_auto_approve", { p_token: token, p_on: want })).auto_approve); msg(want ? "가입 자동 승인을 켰습니다." : "가입 자동 승인을 껐습니다.", true); }
+    catch (e) { showAuto(!want); msg(errText(e)); } finally { autoOk.disabled = false; }
+  };
   $a("#simBtn").onclick = () => { app.hidden = true; document.body.classList.add("admin-sim"); window.SIM?.resetCam(); window.SIM?.render(); backBtn.textContent = "관리자 화면으로"; backBtn.hidden = false; backBtn.classList.remove("inflow"); document.querySelector("#stage")?.append(backBtn); window.dispatchEvent(new Event("resize")); };
   app.querySelectorAll("[data-tab]").forEach((b) => (b.onclick = () => { tab = b.dataset.tab; renderTab(); }));
   await loadDrivers();
