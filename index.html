@@ -375,7 +375,7 @@ const reduceMotion = matchMedia("(prefers-reduced-motion: reduce)").matches;
 const TOPY = 3.43; // walkway height on top of the tank
 
 // ---------- renderer / scene ----------
-const renderer = new THREE.WebGLRenderer({ antialias: true, preserveDrawingBuffer: true });
+const renderer = new THREE.WebGLRenderer({ antialias: true }); // no preserveDrawingBuffer: nothing reads the 3D canvas back, and keeping it costs phones a buffer copy every frame
 const LOWEND = matchMedia("(pointer: coarse)").matches, homeView = () => (LOWEND ? "follow" : "all"); // phones and tablets: fewer pixels, smaller shadow map
 renderer.setPixelRatio(Math.min(window.devicePixelRatio, LOWEND ? 1.5 : 2));
 renderer.shadowMap.enabled = true;
@@ -400,8 +400,10 @@ applyBg();
 matchMedia("(prefers-color-scheme: dark)").addEventListener("change", applyBg);
 new MutationObserver(applyBg).observe(document.documentElement, { attributes: true, attributeFilter: ["data-theme"] });
 
+// the sky photo is loaded once and shared: soft light and reflections (environment) and the visible sky (background)
+const skyPhoto = new Promise((res) => new THREE.TextureLoader().load("tex/sky_2k.jpg", (t) => { t.colorSpace = THREE.SRGBColorSpace; res(t); }, undefined, () => res(null)));
 { const pm = new THREE.PMREMGenerator(renderer); scene.environment = pm.fromScene(new RoomEnvironment(renderer), 0.04).texture; // until the sky HDRI arrives
-  new THREE.TextureLoader().load("tex/sky_2k.jpg", (t) => { t.mapping = THREE.EquirectangularReflectionMapping; t.colorSpace = THREE.SRGBColorSpace; scene.environment = pm.fromEquirectangular(t).texture; t.dispose(); }, undefined, () => {}); } // overcast sky photo: soft light and real reflections
+  skyPhoto.then((t) => { if (t) scene.environment = pm.fromEquirectangular(t).texture; }); } // overcast sky photo: soft light and real reflections
 scene.add(new THREE.HemisphereLight(0xf2f4f6, 0x6d706c, 0.5));
 const sun = new THREE.DirectionalLight(0xfff6ea, 1.5); // overcast: weaker, softer key light
 sun.shadow.bias = -0.0004; sun.shadow.normalBias = 0.02;
@@ -506,7 +508,7 @@ for (const z of [-4.78, -3.72]) {
   g.setAttribute("color", new THREE.Float32BufferAttribute(c, 3));
   const sky = new THREE.Mesh(g, new THREE.MeshBasicMaterial({ vertexColors: true, side: THREE.BackSide, fog: false, depthWrite: false, toneMapped: false }));
   sky.raycast = () => {}; scene.add(sky);
-  new THREE.TextureLoader().load("tex/sky_2k.jpg", (t) => { t.colorSpace = THREE.SRGBColorSpace; sky.material.map = t; sky.material.vertexColors = false; sky.material.needsUpdate = true; }, undefined, () => {}); } // photo sky, gradient as fallback
+  skyPhoto.then((t) => { if (!t) return; sky.material.map = t; sky.material.vertexColors = false; sky.material.needsUpdate = true; }); } // photo sky, gradient as fallback
 function speckle(base, spread, n, rep, joints) { // concrete grain with slab joints
   const t = canvasTex(256, 256), g = t.g; g.fillStyle = base; g.fillRect(0, 0, 256, 256);
   for (let i = 0; i < n; i++) { const v = (Math.random() - 0.5) * spread, c = v > 0 ? 255 : 0; g.fillStyle = `rgba(${c},${c},${c},${Math.abs(v)})`; g.fillRect(Math.random() * 256, Math.random() * 256, 1 + Math.random() * 2, 1 + Math.random() * 2); }
@@ -2545,7 +2547,10 @@ goView(homeView(), true); // phones and tablets stay in the third-person view (n
 
 const tmp = new THREE.Vector3();
 let last = performance.now(), flowT = 0, shownQ = -1;
+const appEl = document.getElementById("app"); // the login / home / admin screens cover the whole 3D view
+const covered = () => !!appEl && !appEl.hidden && getComputedStyle(appEl).display !== "none";
 function frame(nowMs) {
+  if (covered()) { last = nowMs; requestAnimationFrame(frame); return; } // nothing to see: no simulation, no drawing (saves phone battery)
   if (LOWEND && currentView === "free" && !tween && !fx.fire.on && !scen.on && !drive.on) goView("follow"); // a fire or demo close-up is over: back behind the driver
   const dt = Math.min(0.05, (nowMs - last) / 1000); last = nowMs;
   stepAction(dt);
