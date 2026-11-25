@@ -34,6 +34,7 @@ const sess = { get(k) { try { return sessionStorage.getItem(k); } catch { return
 const app = document.getElementById("app"); // in the page from the start, so the simulator never shows before the login screen
 const coach = document.createElement("div"); coach.id = "coach"; coach.hidden = true;
 const quitBtn = document.createElement("button"); quitBtn.id = "quit"; quitBtn.type = "button"; quitBtn.textContent = "그만하기"; quitBtn.hidden = true;
+const voiceBtn = document.createElement("button"); voiceBtn.id = "voiceBtn"; voiceBtn.type = "button"; voiceBtn.hidden = true; // voice on/off, top right of the training / exam screen
 const backBtn = document.createElement("button"); backBtn.id = "backAdmin"; backBtn.type = "button"; backBtn.textContent = "관리자 화면으로"; backBtn.hidden = true;
 let me = null, token = sess.get("edu-token");
 function screen(html) { app.hidden = false; app.innerHTML = `<div class="sheet">${html}</div>`; app.scrollTop = 0; return app; }
@@ -45,10 +46,39 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
 // voice guide (browser speech; quality depends on the device)
 let voiceOn = store.get("edu-voice") !== "0";
-function say(text) {
-  if (!voiceOn || !("speechSynthesis" in window)) return;
-  try { speechSynthesis.cancel(); const u = new SpeechSynthesisUtterance(text); u.lang = "ko-KR"; u.rate = 0.92; speechSynthesis.speak(u); } catch {}
+// speaker with two sound waves; off: the same speaker crossed by a slash
+const SPEAKER = `<path d="M2.5 9h4l5.5-4.5v15L6.5 15h-4z" fill="currentColor"/><path d="M15.2 8.6a4.8 4.8 0 0 1 0 6.8M18.3 5.5a9.2 9.2 0 0 1 0 13" fill="none" stroke="currentColor" stroke-width="2.3" stroke-linecap="round"/>`;
+const SLASH = `<path d="M3.5 3.5l17 17" stroke="var(--e-sheet)" stroke-width="5" stroke-linecap="round"/><path d="M3.5 3.5l17 17" stroke="currentColor" stroke-width="2.3" stroke-linecap="round"/>`;
+// The guidance runs on its own clock: the speaker button only mutes and unmutes it. Unmuting picks up
+// where the voice would be by now (from the start of that word), not from the beginning.
+const talk = { text: "", base: 0, at: 0, u: null }; // `base` characters were read at time `at` (ms)
+let cps = 7; // characters per second at rate 0.92; tuned by every sentence the device finishes
+const talkPos = () => talk.base + ((performance.now() - talk.at) / 1000) * cps;
+function hush() { talk.u = null; try { speechSynthesis.cancel(); } catch {} }
+function speakFrom(i) {
+  hush();
+  talk.base = i; talk.at = performance.now();
+  if (!voiceOn || !("speechSynthesis" in window) || i >= talk.text.length) return;
+  try {
+    const part = talk.text.slice(i), u = new SpeechSynthesisUtterance(part), t0 = performance.now();
+    u.lang = "ko-KR"; u.rate = 0.92; talk.u = u;
+    u.onboundary = (e) => { if (talk.u === u) { talk.base = i + e.charIndex; talk.at = performance.now(); } }; // where the voice really is (where the device reports it)
+    u.onend = () => { if (talk.u !== u) return; const d = (performance.now() - t0) / 1000; if (d > 1 && part.length > 10) cps = Math.max(3, Math.min(14, cps * 0.6 + (part.length / d) * 0.4)); talk.u = null; };
+    speechSynthesis.speak(u);
+  } catch {}
 }
+function setVoice(on) {
+  voiceOn = on; store.set("edu-voice", on ? "1" : "0"); // remembered: the next training / exam starts the same way
+  voiceBtn.innerHTML = `<svg viewBox="0 0 24 24" width="30" height="30" aria-hidden="true">${SPEAKER}${on ? "" : SLASH}</svg>`;
+  voiceBtn.setAttribute("aria-pressed", String(on)); voiceBtn.setAttribute("aria-label", on ? "음성 안내 켜짐 (누르면 끔)" : "음성 안내 꺼짐 (누르면 켬)"); voiceBtn.title = on ? "음성 끄기" : "음성 켜기";
+}
+voiceBtn.onclick = () => {
+  setVoice(!voiceOn);
+  if (!voiceOn) { const p = talkPos(); hush(); talk.base = p; talk.at = performance.now(); return; } // muted: the clock keeps running
+  const p = Math.floor(talkPos());
+  if (p < talk.text.length) speakFrom(talk.text.lastIndexOf(" ", p) + 1); // unmuted mid-sentence: from the start of the current word
+};
+function say(text) { talk.text = text; speakFrom(0); }
 
 // ---------- login / signup ----------
 function showLogin(note = "") {
@@ -114,7 +144,7 @@ function showSignup() {
     } catch (e) { msg(errText(e)); } finally { busyBtn(b, false); }
   };
 }
-async function logout() { const t = token; token = null; me = null; sess.set("edu-token", null); showLogin(); try { if (t) await rpc("logout", { p_token: t }); } catch {} }
+async function logout() { document.body.classList.remove("admin-sim"); const t = token; token = null; me = null; sess.set("edu-token", null); showLogin(); try { if (t) await rpc("logout", { p_token: t }); } catch {} }
 
 // ---------- driver home and records ----------
 async function showHome() {
@@ -129,13 +159,12 @@ async function showHome() {
       <button class="big ghost" id="goFree" type="button">자유 시뮬레이터<small>기록 없이 마음대로 조작해 봅니다</small></button>
       <button class="big ghost" id="goRec" type="button">내 기록 보기</button>
     </div>
-    <div class="row-end"><label class="check"><input type="checkbox" id="voice" ${voiceOn ? "checked" : ""}> 음성 안내</label><button class="link" id="out" type="button">로그아웃</button></div>`);
+    <div class="row-end"><button class="link" id="out" type="button">로그아웃</button></div>`);
   $a("#goTrain").onclick = () => runSession("training");
   $a("#goExam").onclick = () => runSession("exam");
   $a("#goRec").onclick = showMyRecords;
   $a("#goFree").onclick = openFree;
   $a("#out").onclick = logout;
-  $a("#voice").onchange = (e) => { voiceOn = e.target.checked; store.set("edu-voice", voiceOn ? "1" : "0"); };
   try {
     const list = await rpc("my_attempts", { p_token: token });
     const ex = list.filter((a) => a.kind === "exam"), passed = ex.find((a) => a.passed);
@@ -159,8 +188,8 @@ async function showMyRecords() {
 
 // ---------- training and exam in the simulator ----------
 let session = null;
-function enterSim() { document.body.classList.add("easy"); app.hidden = true; coach.hidden = false; quitBtn.hidden = false; document.querySelector("#stage")?.append(coach, quitBtn); window.dispatchEvent(new Event("resize")); }
-function leaveSim() { document.body.classList.remove("easy"); coach.hidden = true; quitBtn.hidden = true; try { speechSynthesis.cancel(); } catch {} window.dispatchEvent(new Event("resize")); }
+function enterSim() { talk.text = ""; hush(); document.body.classList.add("easy"); app.hidden = true; coach.hidden = false; quitBtn.hidden = false; setVoice(voiceOn); voiceBtn.hidden = false; window.SIM?.resetCam(); document.querySelector("#stage")?.append(coach, quitBtn, voiceBtn); window.dispatchEvent(new Event("resize")); }
+function leaveSim() { document.body.classList.remove("easy"); coach.hidden = true; quitBtn.hidden = true; voiceBtn.hidden = true; talk.text = ""; hush(); window.dispatchEvent(new Event("resize")); }
 quitBtn.onclick = () => {
   if (session?.kind === "exam" && quitBtn.dataset.sure !== "1") { quitBtn.dataset.sure = "1"; quitBtn.textContent = "중단하면 0점 기록 · 한 번 더 누르기"; setTimeout(() => { quitBtn.dataset.sure = ""; quitBtn.textContent = "그만하기"; }, 4000); return; }
   quitBtn.dataset.sure = ""; quitBtn.textContent = "그만하기";
@@ -303,15 +332,15 @@ async function showAdmin() {
   $a("#out").onclick = () => { app.classList.remove("wide"); logout(); };
   $a("#qrBtn").onclick = showQR;
   $a("#allXls").onclick = exportAll;
-  $a("#simBtn").onclick = () => { app.hidden = true; backBtn.textContent = "관리자 화면으로"; backBtn.hidden = false; backBtn.classList.remove("inflow"); document.querySelector("#stage")?.append(backBtn); window.dispatchEvent(new Event("resize")); };
+  $a("#simBtn").onclick = () => { app.hidden = true; document.body.classList.add("admin-sim"); window.SIM?.resetCam(); window.SIM?.render(); backBtn.textContent = "관리자 화면으로"; backBtn.hidden = false; backBtn.classList.remove("inflow"); document.querySelector("#stage")?.append(backBtn); window.dispatchEvent(new Event("resize")); };
   app.querySelectorAll("[data-tab]").forEach((b) => (b.onclick = () => { tab = b.dataset.tab; renderTab(); }));
   await loadDrivers();
 }
-backBtn.onclick = () => { backBtn.hidden = true; app.hidden = false; free = false; document.body.classList.remove("free"); poke(); window.dispatchEvent(new Event("resize")); };
+backBtn.onclick = () => { backBtn.hidden = true; app.hidden = false; document.body.classList.remove("admin-sim"); window.SIM?.render(); free = false; document.body.classList.remove("free"); poke(); window.dispatchEvent(new Event("resize")); };
 let free = false;
 async function openFree() {
   const SIM = await waitSim(); free = true;
-  SIM.setAuto(false); SIM.resetScene(modeOf(me.fuel)); SIM.goView("follow");
+  SIM.setAuto(false); SIM.resetScene(modeOf(me.fuel)); SIM.resetCam(); SIM.goView("follow"); SIM.render();
   app.hidden = true; backBtn.textContent = "처음 화면으로"; backBtn.hidden = false; document.body.classList.add("free");
   const inflow = matchMedia("(max-width: 600px), (pointer: coarse)").matches; // phones and tablets: the button sits under the 3D view, never on it
   backBtn.classList.toggle("inflow", inflow);

@@ -273,7 +273,7 @@ legend { font-size: 13px; padding: 0; margin-bottom: 6px; }
         <h3 id="infoTitle"></h3>
         <p id="infoBody"></p>
         <div class="spec" id="infoSpec"></div>
-        <p class="howto"><b>조작</b> W A S D 이동 · Shift 달리기 · Space 점프 · 클릭 또는 E 설비 조작 · 드래그 시점 회전 · 운전 중 W 가속 · S 제동/후진 · A D 조향 · E 하차</p>
+        <p class="howto"><b>조작</b> W A S D 이동 · Shift 달리기 · Space 점프 · 클릭 또는 E 설비 조작 · 드래그 시점 회전<span class="admin-only"> · 운전 중 W 가속 · S 제동/후진 · A D 조향 · E 하차</span></p>
         <div class="hold" id="hold"></div>
       </div>
       <div class="card logc">
@@ -326,7 +326,7 @@ legend { font-size: 13px; padding: 0; margin-bottom: 6px; }
       </div>
 
 
-    <div class="card">
+    <div class="card admin-only" id="driveCard">
       <h2>유조차 운전</h2>
       <div class="fire-btns">
         <button type="button" class="fbtn good" id="driveIn">입구에서 진입<small>정지선 정차 연습</small></button>
@@ -1372,8 +1372,10 @@ function barriers() {
   return out;
 }
 const go = walk;
-const climbSeq = () => [go(S.rear), walk(S.ladderFoot), face(V(0, 0, -0.45)), walk(S.ladderMount, 0.6), walk(S.ladderTop, 0.75), walk(S.ladderExit, 0.5), walk(S.deck, 1.0), now_(() => { state.onTop = true; log("후면 사다리로 유조차 위에 오름"); })];
-const descendSeq = () => [walk(S.deck), walk(S.ladderExit, 0.8), face(V(-10, TOPY, -0.45)), walk(S.ladderTop, 0.5, true), walk(S.ladderMount, 0.75, true), walk(S.ladderFoot, 0.6, true), now_(() => { state.onTop = false; log("유조차에서 내려옴"); }), walk(S.rear)];
+const nearFoot = () => driver.position.distanceTo(S.ladderFoot) < 0.3; // already standing at the ladder: no detour to the rear
+const climbSeq = () => [dyn(() => (nearFoot() ? [] : [go(S.rear), walk(S.ladderFoot)])), face(V(0, 0, -0.45)), walk(S.ladderMount, 0.6), walk(S.ladderTop, 0.75), walk(S.ladderExit, 0.5), walk(S.deck, 1.0), now_(() => { state.onTop = true; log("후면 사다리로 유조차 위에 오름"); })];
+const descendSeq = () => [walk(S.deck), walk(S.ladderExit, 0.8), face(V(-10, TOPY, -0.45)), walk(S.ladderTop, 0.5, true), walk(S.ladderMount, 0.75, true), walk(S.ladderFoot, 0.6, true), now_(() => { state.onTop = false; log("유조차에서 내려옴"); }),
+  dyn(() => (state.clipped ? at(S.ladderFoot, HOOK_REST, () => A.clip(false), { up: true }) : [])), walk(S.rear)]; // unhook right at the ladder foot, then step back
 const down = () => dyn(() => (state.onTop ? descendSeq() : []));
 const up = () => dyn(() => (state.onTop ? [] : [B.harness(true), B.clip(true), ...climbSeq()]));
 // go to a spot, turn, reach, then apply fn
@@ -1386,7 +1388,7 @@ const B = { // one self-checking move per piece of work
   lc: () => dyn(() => [down(), ...at(S.lc, LC_POS, A.lc)]),
   valves: (on) => dyn(() => (state.valves === on ? [] : [down(), ...at(S.valves, VALVE_POS, () => A.valves(on))])),
   harness: (on) => dyn(() => (mode !== "top" || state.harnessOn === on ? [] : [down(), ...at(S.rack, RACK_POS, () => A.harness(on))])),
-  clip: (on) => dyn(() => (mode !== "top" || state.clipped === on ? [] : [down(), go(S.rear), ...at(S.ladderFoot, HOOK_REST, () => A.clip(on), { up: true }), walk(S.rear)])),
+  clip: (on) => dyn(() => (mode !== "top" || state.clipped === on ? [] : [down(), ...(nearFoot() ? [] : [go(S.rear)]), ...at(S.ladderFoot, HOOK_REST, () => A.clip(on), { up: true }), ...(on ? [] : [walk(S.rear)])])), // clipped on: stay at the ladder and climb
   band: (on) => dyn(() => {
     if (worn() === on && (on ? state.band === "skin" : true)) return [];
     const v = on ? "skin" : "off";
@@ -1542,7 +1544,7 @@ function select(key) {
 }
 
 // ---------- camera: overview, follow, first person ----------
-let tween = null, currentView = "all";
+let tween = null, currentView = "all", camZoom = 1, orbit = { yaw: 0, pitch: 0 }; // orbit: drag-turned angle around the driver (kept until reset) // camZoom: wheel / pinch distance of the view behind the driver
 const fp = { yaw: 0, pitch: -0.1, dragAt: -1e9 };
 const look = { target: null };
 const narrowK = () => (camera.aspect < 1.3 ? Math.min(2.2, Math.pow(1.3 / camera.aspect, 0.85)) : 1);
@@ -1571,9 +1573,15 @@ function goView(name, instant = false) {
 function followCam(a) {
   const p = driver.position, high = p.y > 1;
   const target = p.clone().add(V(0, 1.05, 0));
-  const off = (high ? V(2.3, 0.85, -2.3) : p.x > 6.45 ? V(2.6, 1.6, -1.6) : V(-2.9, 1.6, -0.2)).multiplyScalar(narrowK());
+  const off = (high ? V(2.3, 0.85, -2.3) : p.x > 6.45 ? V(2.6, 1.6, -1.6) : V(-2.9, 1.6, -0.2)).multiplyScalar(narrowK() * camZoom);
+  const turned = Math.abs(orbit.yaw) > 0.03 || Math.abs(orbit.pitch) > 0.03;
+  if (turned) { // the user turned the view around the driver: same distance, new direction
+    const r = off.length(), th = Math.atan2(off.x, off.z) + orbit.yaw, ph = Math.max(0.3, Math.min(1.45, Math.acos(off.y / r) - orbit.pitch));
+    off.set(r * Math.sin(ph) * Math.sin(th), r * Math.cos(ph), r * Math.sin(ph) * Math.cos(th));
+  }
   const pos = target.clone().add(off);
-  if (!high && p.x <= 6.45) pos.z = Math.max(-2.75, Math.min(-1.75, pos.z)); // stay in the lane between island and truck
+  if (!turned && !high && p.x <= 6.45) pos.z = Math.max(-2.75, Math.min(-1.75, pos.z)); // stay in the lane between island and truck
+  pos.y = Math.max(0.25, pos.y);
   controls.target.lerp(target, a); camera.position.lerp(pos, a);
 }
 function fpCam(dt) {
@@ -1600,7 +1608,18 @@ function fpCam(dt) {
 }
 document.querySelectorAll("[data-view]").forEach((b) => b.addEventListener("click", () => goView(b.dataset.view)));
 controls.addEventListener("start", () => { if (currentView === "follow" || tween) { tween = null; currentView = "free"; pressView(""); } });
-if (LOWEND) controls.enabled = false; // phones and tablets: the view stays fixed behind the driver (no drag, no pinch)
+if (LOWEND) controls.enabled = false; // phones and tablets: the view stays behind the driver (no drag; two-finger pinch zooms, below)
+// while the driver acts on his own (auto play, one step, a guided lesson) the view stays behind him: no turning, only zoom (wheel, pinch)
+const easy = () => document.body.classList.contains("easy"); // the guided training / exam screen (app.js): watch only, no direct operation
+const autoCam = () => !drive.on && !fx.fire.on && !scen.on && (autoplay || busy() || easy());
+const orbitable = () => currentView === "follow" && !tween && !drive.on && (LOWEND || autoCam()); // drag turns the view around the driver
+function zoomBy(f) {
+  if (currentView === "fp") return;
+  if (currentView === "follow" && !tween) { camZoom = Math.max(0.45, Math.min(2.6, camZoom * f)); return; }
+  const d = camera.position.clone().sub(controls.target);
+  camera.position.copy(controls.target).add(d.setLength(Math.max(controls.minDistance, Math.min(controls.maxDistance, d.length() * f))));
+}
+canvas.addEventListener("wheel", (ev) => { if (!autoCam() || currentView === "fp") return; ev.preventDefault(); zoomBy(Math.exp(ev.deltaY * 0.0012)); }, { passive: false });
 
 // ---------- reset / mode ----------
 function resetScene(m) {
@@ -1625,7 +1644,8 @@ ui.modes.forEach((r) => r.addEventListener("change", () => {
   log(`출하 방식: ${r.value === "top" ? "상부 출하 (등유·경유)" : "하부 출하 (휘발유)"} · 작업 대기`);
   goView(currentView === "free" ? homeView() : currentView, true); render();
 }));
-$("reset").addEventListener("click", () => { resetScene(mode); log("처음 상태로: 작업 대기"); goView(currentView === "fp" ? "fp" : homeView()); render(); });
+const resetCam = () => { orbit.yaw = 0; orbit.pitch = 0; camZoom = 1; };
+$("reset").addEventListener("click", () => { resetCam(); resetScene(mode); log("처음 상태로: 작업 대기"); goView(currentView === "fp" ? "fp" : homeView()); render(); });
 
 // ---------- screens and the sign ----------
 const SIGN = {
@@ -1734,7 +1754,7 @@ function render() {
     btn.querySelector(".s").textContent = running ? "진행 중" : done ? "완료" : "";
   });
   ui.vehicle.disabled = isBusy; ui.bands.forEach((r) => (r.disabled = isBusy));
-  ui.modes.forEach((m) => (m.disabled = isBusy || state.loading));
+  ui.modes.forEach((m) => (m.disabled = isBusy || state.loading || !document.body.classList.contains("admin-sim"))); // drivers stay on the course chosen at sign-up
   lampSet(gLamp, vOK, 0x3fb07f);
   lampSet(ulcLamp, bOK, 0x3fb07f);
   valveHandle.rotation.z = state.valves ? Math.PI / 2 : 0;
@@ -1815,7 +1835,7 @@ const ITEMS = [
     if (mode !== "top") return { label: "하부 출하: 유조차 위에 오르지 않습니다", blocked: true };
     if (state.onTop) return state.loading ? { label: "출하 중: 먼저 출하를 끝내세요", blocked: true } : { label: "사다리 내려가기", run: () => queue.push(...descendSeq().slice(0, 7)) };
     if (!state.harnessOn || !state.clipped) return { label: "안전벨트에 안전고리를 걸고 올라가세요", blocked: true };
-    return { label: "후면 사다리 오르기", run: () => queue.push(...climbSeq().slice(1)) };
+    return { label: "후면 사다리 오르기", run: () => queue.push(...climbSeq()) };
   } },
   { id: "band", info: "band", meshes: () => [band, lineB], pos: () => MODES[mode].hook, avail: () => {
     if (mode === "top" && !state.onTop) return worn() ? null : { label: "접지 밴드: 유조차 위 상부 LC에서 착용", blocked: true };
@@ -1895,7 +1915,14 @@ const locked = () => document.pointerLockElement === canvas;
 let lockMove = 0, lockedAtDown = false;
 const centre = () => { const r = canvas.getBoundingClientRect(); return { clientX: r.left + r.width / 2, clientY: r.top + r.height / 2 }; };
 document.addEventListener("pointerlockchange", () => { $("hint").textContent = locked() ? "마우스로 둘러보기 · 클릭: 조준한 설비 조작 · ESC: 고정 해제" : currentView === "fp" ? "클릭하면 마우스 고정 · W A S D 이동" : "드래그 회전 · 휠 확대 · 라벨을 누르면 설명"; });
+let turnAt = null;
+canvas.addEventListener("pointerdown", (ev) => { turnAt = ev.isPrimary ? [ev.clientX, ev.clientY] : null; });
 canvas.addEventListener("pointermove", (ev) => {
+  if (turnAt && ev.isPrimary && orbitable() && touches.size < 2 && (ev.pointerType !== "mouse" || ev.buttons & 1)) {
+    orbit.yaw -= (ev.clientX - turnAt[0]) * 0.006; orbit.pitch = Math.max(-0.6, Math.min(0.9, orbit.pitch + (ev.clientY - turnAt[1]) * 0.004));
+  }
+  if (turnAt) turnAt = [ev.clientX, ev.clientY];
+  if (easy()) return; // nothing to hover or pick in the training screen
   if (locked()) { lockMove += Math.abs(ev.movementX) + Math.abs(ev.movementY); fp.yaw -= ev.movementX * 0.0025; fp.pitch = Math.max(-1.2, Math.min(1.2, fp.pitch - ev.movementY * 0.0025)); fp.dragAt = performance.now(); return; }
   if (dragging && currentView === "fp") {
     fp.yaw -= ev.movementX * 0.005; fp.pitch = Math.max(-1.2, Math.min(1.2, fp.pitch - ev.movementY * 0.005)); fp.dragAt = performance.now();
@@ -1917,13 +1944,25 @@ canvas.addEventListener("pointerleave", () => { glow(hovered, false); hovered = 
 canvas.addEventListener("pointerdown", (ev) => {
   lockedAtDown = locked(); lockMove = 0;
   if (currentView === "fp" && !locked()) { try { const r = canvas.requestPointerLock(); r?.catch?.(() => {}); } catch {} }
+  if (easy()) return;
   downAt = [ev.clientX, ev.clientY]; dragging = true; canvas.focus({ preventScroll: true }); if (currentView === "fp" && !locked()) try { canvas.setPointerCapture(ev.pointerId); } catch {} }); // capture throws while pointer-locked
-window.addEventListener("pointerup", () => (dragging = false));
+window.addEventListener("pointerup", () => { dragging = false; turnAt = null; });
 canvas.addEventListener("pointerup", (ev) => {
   if (locked()) { if (lockedAtDown && lockMove < 12) { const it = pick(centre()); if (it) tryItem(it); } return; }
-  if (!downAt || Math.hypot(ev.clientX - downAt[0], ev.clientY - downAt[1]) > 5) return;
+  if (easy() || !downAt || Math.hypot(ev.clientX - downAt[0], ev.clientY - downAt[1]) > 5) return;
   const it = pick(ev); if (it) tryItem(it);
 });
+// two-finger pinch: always on phones and tablets, and on any touch screen while the view is held behind the driver
+const touches = new Map(); let pinch0 = 0;
+const spread = () => { const [a, b] = [...touches.values()]; return Math.hypot(a[0] - b[0], a[1] - b[1]); };
+canvas.addEventListener("pointerdown", (ev) => { if (ev.pointerType !== "touch") return; touches.set(ev.pointerId, [ev.clientX, ev.clientY]); if (touches.size === 2) { pinch0 = spread(); downAt = null; } }); // a pinch is not a tap
+canvas.addEventListener("pointermove", (ev) => {
+  if (!touches.has(ev.pointerId)) return; touches.set(ev.pointerId, [ev.clientX, ev.clientY]);
+  if (touches.size !== 2 || !(LOWEND || autoCam())) return;
+  const s = spread(); if (pinch0 > 0 && s > 0) zoomBy(pinch0 / s); pinch0 = s;
+});
+const unpinch = (ev) => { touches.delete(ev.pointerId); pinch0 = 0; };
+window.addEventListener("pointerup", unpinch); window.addEventListener("pointercancel", unpinch);
 canvas.tabIndex = 0;
 canvas.setAttribute("aria-label", "3D 장면. W A S D로 기사 이동, E로 상호작용");
 const typing = (el) => el && (/^(INPUT|TEXTAREA|SELECT)$/.test(el.tagName) || el.isContentEditable || !!el.closest?.("#app:not([hidden]), .qr-full")); // never steal keys from a form or the training app
@@ -2462,7 +2501,7 @@ $("driveIn").addEventListener("click", () => {   // a fresh arrival: start at th
 $("driveBoard").addEventListener("click", boardTruck);
 
 // a small handle for an outer training app (login, guided steps, exams); unused when the page runs alone
-window.SIM = { STEPS, state, T, fx, busy, resetScene, runStep, goView, stepEnabled, mode: () => mode, setAuto, log, fightFire };
+window.SIM = { STEPS, state, T, fx, busy, resetScene, runStep, goView, stepEnabled, mode: () => mode, setAuto, log, fightFire, resetCam, render };
 // ---------- start ----------
 resetScene("top");
 log("작업 대기: 1단계부터 진행하세요");
@@ -2526,6 +2565,9 @@ function frame(nowMs) {
   const qStep = Math.floor(state.progress * 80);
   if (qStep !== shownQ) { shownQ = qStep; screensDirty = true; }
   if (screensDirty) { screensDirty = false; drawScreens(); }
+  const held = autoCam(); // the driver acts on his own: third person behind him, zoom only
+  if (held && currentView !== "follow") goView("follow");
+  controls.enabled = !LOWEND && currentView !== "fp" && !held;
   if (currentView === "fp") { if (drive.on) cabCam(); else fpCam(dt); }
   else {
     if (tween) {
