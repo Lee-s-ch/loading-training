@@ -246,8 +246,8 @@ legend { font-size: 13px; padding: 0; margin-bottom: 6px; }
         <button type="button" data-view="work" aria-pressed="false" id="viewWork">상부 LC</button>
       </div>
       <div class="hud" id="hud" aria-live="off">
-        <span>인체 정전기</span><b id="kv">낮음</b><i id="mj">방전 시 점화 위험 낮음</i>
-        <div class="kvbar"><div id="kvfill"></div><div class="mie" title="이 선을 넘으면 방전 불꽃이 유증기에 불을 붙일 수 있음"></div></div>
+        <span>인체 전위</span><b id="kv">0.0 kV</b><i id="mj">방전 시 0.00 mJ</i>
+        <div class="kvbar"><div id="kvfill"></div><div class="mie" title="휘발유 증기 최소점화에너지 0.2 mJ에 해당하는 전위"></div></div>
       </div>
       <div class="labels" id="labels"></div>
       <div class="caption" id="caption" hidden></div>
@@ -423,7 +423,7 @@ const mat = {
   yellow: M(0xe5b824, { roughness: 0.6 }), dark: M(0x2a2d2c, { roughness: 0.6 }), post: M(0x7a817d, { metalness: 0.4 }), grate: M(0x9aa39f, { transparent: true, opacity: 0.45, metalness: 0.4, roughness: 0.6 }),
   coil: M(0xe0a020, { roughness: 0.55 }), bandCable: M(0x1f6fb2, { roughness: 0.5 }),
   vest: M(0xf28c28), skin: M(0xe8b894), helmet: M(0xf2f2ee, { roughness: 0.4 }),
-  harness: M(0xb7322a), lanyard: M(0xd99a1e, { roughness: 0.6 }), resistor: M(0xc9a227), red: M(0xc0392b), alert: M(0xff3b2f, { emissive: 0xff2a1a, emissiveIntensity: 1.6, roughness: 0.4 }),
+  harness: M(0xb7322a), lanyard: M(0xd99a1e, { roughness: 0.6 }), red: M(0xc0392b), alert: M(0xff3b2f, { emissive: 0xff2a1a, emissiveIntensity: 1.6, roughness: 0.4 }),
 };
 function mesh(geo, material, pos, parent = scene) {
   const m = new THREE.Mesh(geo, material);
@@ -1066,13 +1066,12 @@ function updateVapor() {
 const flow = [];
 for (let i = 0; i < 12; i++) { const p = mesh(new THREE.SphereGeometry(0.035, 10, 8), M(0x8ce0b4, { emissive: 0x3fb07f, emissiveIntensity: 0.9 })); p.visible = false; flow.push(p); }
 
-// ---------- band line: outlet -> 1 MOhm resistor -> 2-wire coil -> breakaway connector -> band ----------
+// ---------- band line: outlet -> 2-wire coil -> breakaway connector -> band ----------
 const band = mesh(new THREE.TorusGeometry(0.068, 0.024, 10, 28), M(0x0a7a52, { roughness: 0.4, emissive: 0x0a7a52, emissiveIntensity: 0.25 }));
 band.add(new THREE.Mesh(new THREE.SphereGeometry(0.1, 8, 6), new THREE.MeshBasicMaterial({ visible: false }))); // invisible pick target: the crosshair would slip through the ring
 const bypassBar = box(0.03, 0.16, 0.09, mat.steel, V(0.08, 0, 0), band); bypassBar.rotation.x = Math.PI / 2;
 const lineA = liveTube(mat.bandCable, 0.011, 6), lineB = liveTube(mat.bandCable, 0.011, 6);
 const line = { coil: null, key: "" };
-const resistor = cyl(0.035, 0.14, mat.resistor, null, scene, 16);
 const connA = cyl(0.04, 0.1, M(0x222222), null, scene, 16);
 const connB = cyl(0.04, 0.1, M(0x0a7a52), null, scene, 16);
 const ringA = mesh(new THREE.TorusGeometry(0.075, 0.014, 10, 28), mat.alert);
@@ -1100,7 +1099,6 @@ function updateBand(force = false) {
   const partA = new Part(coil, 0, tA, cut ? md.drop : 0);
   setTube(lineA, partA, 180);
   setTube(lineB, new Part(coil, tB, 1), 50);
-  orientAlong(resistor, coil, 0.06);
   orientAlong(connA, partA, 1);
   orientAlong(connB, coil, tB);
   for (const [ring, conn] of [[ringA, connA], [ringB, connB]]) { ring.position.copy(conn.position); ring.quaternion.copy(conn.quaternion); ring.rotateX(Math.PI / 2); ring.visible = cut; }
@@ -1485,8 +1483,6 @@ const byMode = (v) => (typeof v === "string" ? v : v[mode]);
 const INFO = {
   band: { title: "접지 밴드", tag: "new", at: () => band.getWorldPosition(V(0, 0, 0)).add(V(0, 0.12, 0)),
     body: "손목에 밀착되는 원터치 방식. 밴드 안쪽 얇은 금속 전극 2개가 피부에 닿는다. 전극과 케이블은 일체형으로 봉인해 임의로 다른 선이나 저항을 연결하지 못하게 한다. 비상 시 힘을 주면 풀린다. 출하대에 비치해 개인 지급이 필요 없다.", spec: "전극 2개 · 일체형 봉인 · 원터치 · 출하대 비치" },
-  resistor: { title: "안전 저항", tag: "new", at: () => resistor.position.clone().add(V(0, 0.1, 0)),
-    body: "밴드 선에 직렬로 넣어 전류를 제한한다. 기사가 전원에 닿아도 위험한 전류가 흐르지 않게 한다.", spec: "1 MΩ · 220 V 접촉 시 0.22 mA" },
   cable: { title: "2선 코일 케이블 · 분리형 커넥터", tag: "new", at: () => line.coil.getPoint(0.45).add(V(0, 0.12, 0)),
     body: {
       top: "상부 LC에서 나와 해치 구간(약 6~7 m)을 따라 늘어나는 코일선. 안전대 줄과 나란히 가되 하중을 받지 않는다. 힘을 주면 커넥터가 풀리고, 감시 회로는 이를 개방(불량)으로 판정한다.",
@@ -2066,8 +2062,8 @@ function updateCharge(dt) {
   if (r === body.shown) return;
   body.shown = r;
   const e = mJ(body.kv);
-  kvEl.textContent = grounded() ? "접지됨" : e > MIE_MJ ? "점화 가능" : e > MIE_MJ * 0.4 ? "주의" : "낮음"; // levels only, no exact values (concept demo)
-  mjEl.textContent = grounded() ? "밴드로 접지 · 방전 없음" : e > MIE_MJ ? "방전 시 유증기에 불이 붙을 수 있음" : "방전 시 점화 위험 낮음";
+  kvEl.textContent = `${body.kv.toFixed(1)} kV`;
+  mjEl.textContent = grounded() ? "밴드로 접지 · 방전 없음" : `방전 시 ${e.toFixed(2)} mJ${e > MIE_MJ ? " · 점화 가능" : ""}`;
   kvFill.style.width = `${(body.kv / KV_MAX) * 100}%`;
   hudEl.classList.toggle("hot", e > MIE_MJ);
 }
@@ -2401,7 +2397,7 @@ for (const x of [-7.4, 8.3]) {
 const truckRoot = new THREE.Group(); truckRoot.position.copy(PARK); scene.add(truckRoot);
 const tTop = new THREE.Group(), tBot = new THREE.Group(); truckRoot.add(tTop, tBot);
 {
-  const live = new Set([armIn, armOut, ...armJ, armCW, dropPipe, lever, ...hoseTubes, ...hoseEnds, vaporTube, vaporEnd, gCable, plug, band, lineA, lineB, resistor, connA, connB, ringA, ringB, lanyard, lifeHook, chock, driver, ground, ...flow]);
+  const live = new Set([armIn, armOut, ...armJ, armCW, dropPipe, lever, ...hoseTubes, ...hoseEnds, vaporTube, vaporEnd, gCable, plug, band, lineA, lineB, connA, connB, ringA, ringB, lanyard, lifeHook, chock, driver, ground, ...flow]);
   const bb = new THREE.Box3(), c = V(0, 0, 0), moves = [];
   for (const [parent, dest] of [[scene, truckRoot], [topOnly, tTop], [bottomOnly, tBot]])
     for (const o of parent.children) {
