@@ -117,6 +117,7 @@ header p { margin: 0; color: var(--muted); min-width: 0; }
 .pad .l { grid-column: 1; grid-row: 2; } .pad .d { grid-column: 2; grid-row: 2; } .pad .r { grid-column: 3; grid-row: 2; }
 @media (pointer: coarse) { .pad { display: grid; } .hint { display: none; } .views { display: none; } }
 @media (max-width: 600px) { .hud { top: auto; bottom: 56px; min-width: 130px; } .caption { top: 88px; font-size: 13px; } .banner { top: 132px; font-size: 14px; } }
+@media (pointer: coarse) { .caption { top: 10px; } .banner { top: 96px; } } /* phones and tablets have no view buttons: the scenario line sits at the top centre, the banner just under it */
 .keys { display: grid; grid-template-columns: auto 1fr; gap: 4px 8px; font-size: 12px; align-items: center; }
 .keys kbd { font: 700 11.5px var(--font-mono); border: 1px solid var(--line); border-bottom-width: 2px; border-radius: 4px; padding: 1px 6px; text-align: center; white-space: nowrap; }
 .hold { margin-top: 8px; font-size: 12px; color: var(--muted); }
@@ -423,7 +424,7 @@ const mat = {
   yellow: M(0xe5b824, { roughness: 0.6 }), dark: M(0x2a2d2c, { roughness: 0.6 }), post: M(0x7a817d, { metalness: 0.4 }), grate: M(0x9aa39f, { transparent: true, opacity: 0.45, metalness: 0.4, roughness: 0.6 }),
   coil: M(0xe0a020, { roughness: 0.55 }), bandCable: M(0x1f6fb2, { roughness: 0.5 }),
   vest: M(0xf28c28), skin: M(0xe8b894), helmet: M(0xf2f2ee, { roughness: 0.4 }),
-  harness: M(0xb7322a), lanyard: M(0xd99a1e, { roughness: 0.6 }), resistor: M(0xc9a227), red: M(0xc0392b), alert: M(0xff3b2f, { emissive: 0xff2a1a, emissiveIntensity: 1.6, roughness: 0.4 }),
+  harness: M(0xb7322a), lanyard: M(0xd99a1e, { roughness: 0.6 }), red: M(0xc0392b), alert: M(0xff3b2f, { emissive: 0xff2a1a, emissiveIntensity: 1.6, roughness: 0.4 }),
 };
 function mesh(geo, material, pos, parent = scene) {
   const m = new THREE.Mesh(geo, material);
@@ -1066,13 +1067,12 @@ function updateVapor() {
 const flow = [];
 for (let i = 0; i < 12; i++) { const p = mesh(new THREE.SphereGeometry(0.035, 10, 8), M(0x8ce0b4, { emissive: 0x3fb07f, emissiveIntensity: 0.9 })); p.visible = false; flow.push(p); }
 
-// ---------- band line: outlet -> 1 MOhm resistor -> 2-wire coil -> breakaway connector -> band ----------
+// ---------- band line: outlet -> 2-wire coil -> breakaway connector -> band ----------
 const band = mesh(new THREE.TorusGeometry(0.068, 0.024, 10, 28), M(0x0a7a52, { roughness: 0.4, emissive: 0x0a7a52, emissiveIntensity: 0.25 }));
 band.add(new THREE.Mesh(new THREE.SphereGeometry(0.1, 8, 6), new THREE.MeshBasicMaterial({ visible: false }))); // invisible pick target: the crosshair would slip through the ring
 const bypassBar = box(0.03, 0.16, 0.09, mat.steel, V(0.08, 0, 0), band); bypassBar.rotation.x = Math.PI / 2;
 const lineA = liveTube(mat.bandCable, 0.011, 6), lineB = liveTube(mat.bandCable, 0.011, 6);
 const line = { coil: null, key: "" };
-const resistor = cyl(0.035, 0.14, mat.resistor, null, scene, 16);
 const connA = cyl(0.04, 0.1, M(0x222222), null, scene, 16);
 const connB = cyl(0.04, 0.1, M(0x0a7a52), null, scene, 16);
 const ringA = mesh(new THREE.TorusGeometry(0.075, 0.014, 10, 28), mat.alert);
@@ -1100,7 +1100,6 @@ function updateBand(force = false) {
   const partA = new Part(coil, 0, tA, cut ? md.drop : 0);
   setTube(lineA, partA, 180);
   setTube(lineB, new Part(coil, tB, 1), 50);
-  orientAlong(resistor, coil, 0.06);
   orientAlong(connA, partA, 1);
   orientAlong(connB, coil, tB);
   for (const [ring, conn] of [[ringA, connA], [ringB, connB]]) { ring.position.copy(conn.position); ring.quaternion.copy(conn.quaternion); ring.rotateX(Math.PI / 2); ring.visible = cut; }
@@ -1166,7 +1165,7 @@ function checkReady() {
   if (state.ready && !state.loading && (!vehicleOK() || !bodyOK())) { state.ready = false; log("출하 준비 취소: 출하 전 접지 조건 불량", "w"); }
 }
 const A = {
-  rod() { state.rod = true; body.kv = 0; log("방전봉 터치: 인체 전위 0 kV (잡는 순간만, 움직이면 다시 쌓임)"); render(); },
+  rod() { state.rod = true; body.kv = 0; log("방전봉 터치: 몸의 정전기 제거 (잡는 순간만, 움직이면 다시 쌓임)"); render(); },
   chock(on) { T.chock.on = on; log(on ? "고임목 설치" : "고임목 원위치"); render(); },
   plug(on) {
     T.plug.on = on; ui.vehicle.checked = on;
@@ -1485,8 +1484,6 @@ const byMode = (v) => (typeof v === "string" ? v : v[mode]);
 const INFO = {
   band: { title: "접지 밴드", tag: "new", at: () => band.getWorldPosition(V(0, 0, 0)).add(V(0, 0.12, 0)),
     body: "손목에 밀착되는 원터치 방식. 밴드 안쪽 얇은 금속 전극 2개가 피부에 닿는다. 전극과 케이블은 일체형으로 봉인해 임의로 다른 선이나 저항을 연결하지 못하게 한다. 비상 시 힘을 주면 풀린다. 출하대에 비치해 개인 지급이 필요 없다.", spec: "전극 2개 · 일체형 봉인 · 원터치 · 출하대 비치" },
-  resistor: { title: "안전 저항", tag: "new", at: () => resistor.position.clone().add(V(0, 0.1, 0)),
-    body: "밴드 선에 직렬로 넣어 전류를 제한한다. 기사가 전원에 닿아도 위험한 전류가 흐르지 않게 한다.", spec: "1 MΩ · 220 V 접촉 시 0.22 mA" },
   cable: { title: "2선 코일 케이블 · 분리형 커넥터", tag: "new", at: () => line.coil.getPoint(0.45).add(V(0, 0.12, 0)),
     body: {
       top: "상부 LC에서 나와 해치 구간(약 6~7 m)을 따라 늘어나는 코일선. 안전대 줄과 나란히 가되 하중을 받지 않는다. 힘을 주면 커넥터가 풀리고, 감시 회로는 이를 개방(불량)으로 판정한다.",
@@ -1613,7 +1610,7 @@ controls.addEventListener("start", () => { if (currentView === "follow" || tween
 if (LOWEND) controls.enabled = false; // phones and tablets: the view stays behind the driver (no drag; two-finger pinch zooms, below)
 // while the driver acts on his own (auto play, one step, a guided lesson) the view stays behind him: no turning, only zoom (wheel, pinch)
 const easy = () => document.body.classList.contains("easy"); // the guided training / exam screen (app.js): watch only, no direct operation
-const autoCam = () => !drive.on && !fx.fire.on && !scen.on && (autoplay || busy() || easy());
+const autoCam = () => !drive.on && (autoplay || busy() || easy() || fx.fire.on); // also fire demos and any fire: the view stays behind the driver
 const orbitable = () => currentView === "follow" && !tween && !drive.on && (LOWEND || autoCam()); // drag turns the view around the driver
 function zoomBy(f) {
   if (currentView === "fp") return;
@@ -1621,7 +1618,15 @@ function zoomBy(f) {
   const d = camera.position.clone().sub(controls.target);
   camera.position.copy(controls.target).add(d.setLength(Math.max(controls.minDistance, Math.min(controls.maxDistance, d.length() * f))));
 }
-canvas.addEventListener("wheel", (ev) => { if (!autoCam() || currentView === "fp") return; ev.preventDefault(); zoomBy(Math.exp(ev.deltaY * 0.0012)); }, { passive: false });
+controls.enableZoom = false; // zoom is ours (below): OrbitControls scaled with the raw wheel delta, so a fast wheel or a touchpad jumped to the min / max
+function onWheel(ev) {
+  if (currentView === "fp") return;
+  ev.preventDefault();
+  const px = ev.deltaY * (ev.deltaMode === 1 ? 16 : ev.deltaMode === 2 ? 400 : 1); // lines / pages to pixels
+  zoomBy(Math.exp(Math.max(-60, Math.min(60, px)) * 0.002)); // at most about 13 % per event
+}
+canvas.addEventListener("wheel", onWheel, { passive: false });
+labelsEl.addEventListener("wheel", onWheel, { passive: false }); // over an equipment label too, not only the bare 3D view
 
 // ---------- reset / mode ----------
 function resetScene(m) {
@@ -1960,8 +1965,8 @@ const spread = () => { const [a, b] = [...touches.values()]; return Math.hypot(a
 canvas.addEventListener("pointerdown", (ev) => { if (ev.pointerType !== "touch") return; touches.set(ev.pointerId, [ev.clientX, ev.clientY]); if (touches.size === 2) { pinch0 = spread(); downAt = null; } }); // a pinch is not a tap
 canvas.addEventListener("pointermove", (ev) => {
   if (!touches.has(ev.pointerId)) return; touches.set(ev.pointerId, [ev.clientX, ev.clientY]);
-  if (touches.size !== 2 || !(LOWEND || autoCam())) return;
-  const s = spread(); if (pinch0 > 0 && s > 0) zoomBy(pinch0 / s); pinch0 = s;
+  if (touches.size !== 2 || currentView === "fp") return; // pinch zooms on every touch screen
+  const s = spread(); if (pinch0 > 0 && s > 0) zoomBy(Math.max(0.87, Math.min(1.15, pinch0 / s))); pinch0 = s;
 });
 const unpinch = (ev) => { touches.delete(ev.pointerId); pinch0 = 0; };
 window.addEventListener("pointerup", unpinch); window.addEventListener("pointercancel", unpinch);
@@ -2241,21 +2246,21 @@ function staticDischarge(at) {
   for (let i = 0; i < vapPool.n && !near; i++) if (vapPool.alive(i)) { const j = i * 3; near = Math.hypot(vapPool.pos[j] - at.x, vapPool.pos[j + 1] - at.y, vapPool.pos[j + 2] - at.z) < 1.2; }
   if (!near) return;
   sparkAt(arms.R.tip.getWorldPosition(V(0, 0, 0)), at); body.kv = 0;
-  log(`정전기 방전 ${e.toFixed(1)} mJ → 유증기 점화 (접지 밴드 없음)`, "w");
-  setTimeout(() => { ignite(at, mode === "top"); focusFire(at); toast("화재 진압 우선: E를 누르면 소화기로 소화합니다"); banner("fire", "화재 발생", `인체 방전 ${e.toFixed(1)} mJ > 휘발유 증기 최소점화에너지 약 0.2 mJ`); log("화재 발생: 유증기를 따라 불길 확산", "w"); render(); }, 150);
+  log("정전기 방전 → 유증기 점화 (접지 밴드 없음)", "w");
+  setTimeout(() => { ignite(at, mode === "top"); focusFire(at); toast("화재 진압 우선: E를 누르면 소화기로 소화합니다"); banner("fire", "화재 발생", "몸에 쌓인 정전기가 방전되며 유증기에 불이 붙음"); log("화재 발생: 유증기를 따라 불길 확산", "w"); render(); }, 150);
 }
 
 // on fire the view swings to the flames (first person: the driver's gaze)
-function focusFire(p) {
-  if (currentView === "fp") { const d = p.clone().sub(driver.position); fp.yaw = Math.atan2(d.x, d.z); fp.pitch = -0.25; fp.dragAt = performance.now(); return; }
-  const w = MODES[mode].views.work, toT = p.clone().add(V(0, 0.6, 0));
-  currentView = "free"; pressView("");
-  tween = { from: camera.position.clone(), fromT: controls.target.clone(), to: toT.clone().add(w.pos.clone().sub(w.target).setLength(5.5)), toT, t: 0 };
+function focusFire(p) { // the view stays behind the driver (held while the fire burns); first person: turn the gaze to the flames
+  if (currentView === "fp") { const d = p.clone().sub(driver.position); fp.yaw = Math.atan2(d.x, d.z); fp.pitch = -0.25; fp.dragAt = performance.now(); }
 }
 // ---------- fire demonstration: the same disconnection, without and with the band ----------
 const scen = { on: false, kind: "", cap: "" };
 const bannerEl = $("banner");
+let bannerT = 0;
 function banner(kind, text, sub) {
+  clearTimeout(bannerT);
+  if (kind === "fire") bannerT = setTimeout(() => (bannerEl.hidden = true), 3000); // "fire" is shown for 3 s so it does not cover the scene
   bannerEl.replaceChildren(text); if (sub) { const s = document.createElement("small"); s.textContent = sub; bannerEl.append(s); }
   bannerEl.className = "banner" + (kind === "safe" ? " safe" : ""); bannerEl.hidden = false;
 }
@@ -2288,10 +2293,8 @@ function startScenario(kind) {
   log(kind === "A" ? "화재 시연: 밴드 미착용 (현행)" : "화재 시연: 밴드 착용 (제안)", kind === "A" ? "w" : "g");
   $("infoTitle").textContent = kind === "A" ? "정전기 화재 시연 · 밴드 미착용" : "정전기 화재 시연 · 밴드 착용";
   $("infoBody").textContent = FIRE_NOTE[mode];
-  $("infoSpec").textContent = "인체 150 pF · E = ½CV² · 1.6 kV 이상이면 0.2 mJ 초과";
-  if (currentView === "fp") goView(homeView(), true);
-  currentView = "free"; pressView("");
-  tween = { from: camera.position.clone(), fromT: controls.target.clone(), to: sp.view.pos, toT: sp.view.target, t: 0 };
+  $("infoSpec").textContent = "몸에 정전기가 많이 쌓일수록 방전 불꽃이 커진다";
+  goView("follow"); // third person behind the driver, as in auto play (drag turns around him, wheel / pinch zooms)
   queue.push(
     now_(() => setCap(kind === "A" ? "1/3 작업 중 이동 · 몸에 정전기가 쌓인다" : "1/3 작업 중 이동 · 밴드로 전하가 계속 빠진다")),
     ...sp.path.slice(1).map((p) => walk(p, 1.5)),
@@ -2311,20 +2314,20 @@ function discharge() {
   const sp = scenSpots(), hand = arms.R.tip.getWorldPosition(V(0, 0, 0)), kv = body.kv, e = mJ(kv);
   if (e > MIE_MJ) {
     sparkAt(hand, sp.spark);
-    log(`정전기 방전 ${e.toFixed(1)} mJ (인체 ${kv.toFixed(1)} kV) → 유증기 점화`, "w");
+    log("정전기 방전 → 유증기 점화", "w");
     body.kv = 0;
     queue.push(wait(0.15, () => {
       ignite(sp.spark, mode === "top");
       setCap("3/3 방전 불꽃이 유증기에 옮겨붙어 화재로 번진다");
-      banner("fire", "화재 발생", `인체 방전 ${e.toFixed(1)} mJ > 휘발유 증기 최소점화에너지 약 0.2 mJ`);
+      banner("fire", "화재 발생", "몸에 쌓인 정전기가 방전되며 유증기에 불이 붙음");
       log("화재 발생: 유증기를 따라 불길 확산", "w");
     }), walk(sp.back, 2.6), face(sp.src));
   } else {
     const g = grounded();
     setCap(g ? "3/3 손을 대도 방전이 일어나지 않는다" : "3/3 방전 에너지가 점화에 못 미친다");
-    if (g) banner("safe", "방전 없음 · 인체 전위 0 kV", "밴드가 출하 내내 전하를 흘려보낸다 (1 MΩ × 150 pF, 시정수 약 0.15 ms)");
-    else banner("safe", `방전 ${e.toFixed(2)} mJ · 점화 기준 미만`, "이번에는 점화하지 않았지만 몸은 접지되지 않은 상태다");
-    log(g ? "방전 없음: 밴드로 인체 전하가 계속 빠짐 (0 kV)" : `방전 ${e.toFixed(2)} mJ: 최소점화에너지 미만`, g ? "g" : "w");
+    if (g) banner("safe", "방전 없음", "밴드가 출하 내내 몸의 정전기를 흘려보낸다");
+    else banner("safe", "방전이 약해 점화하지 않음", "이번에는 점화하지 않았지만 몸은 접지되지 않은 상태다");
+    log(g ? "방전 없음: 밴드로 인체 전하가 계속 빠짐" : "방전이 약해 점화하지 않음 (몸은 접지되지 않은 상태)", g ? "g" : "w");
     queue.push(wait(2.5), now_(() => setCap("")));
   }
   render();
@@ -2332,7 +2335,7 @@ function discharge() {
 $("fireA").addEventListener("click", () => startScenario("A"));
 $("fireB").addEventListener("click", () => startScenario("B"));
 const FIRE_NOTE = {
-  bottom: "커플러를 빼는 순간을 같은 조건으로 비교한다. 인체 150 pF, 최소점화에너지 0.2 mJ 대표값으로 계산한 개념 시연.",
+  bottom: "커플러를 빼는 순간을 같은 조건으로 비교한다. 실제 측정값이 아닌, 원리를 보여 주는 개념 시연.",
   top: "로딩암을 빼는 순간을 비교한다. 등유·경유는 평소 위험이 낮아, 고온·잔류 휘발유 증기 조건을 가정한 개념 시연.",
 };
 
@@ -2398,7 +2401,7 @@ for (const x of [-7.4, 8.3]) {
 const truckRoot = new THREE.Group(); truckRoot.position.copy(PARK); scene.add(truckRoot);
 const tTop = new THREE.Group(), tBot = new THREE.Group(); truckRoot.add(tTop, tBot);
 {
-  const live = new Set([armIn, armOut, ...armJ, armCW, dropPipe, lever, ...hoseTubes, ...hoseEnds, vaporTube, vaporEnd, gCable, plug, band, lineA, lineB, resistor, connA, connB, ringA, ringB, lanyard, lifeHook, chock, driver, ground, ...flow]);
+  const live = new Set([armIn, armOut, ...armJ, armCW, dropPipe, lever, ...hoseTubes, ...hoseEnds, vaporTube, vaporEnd, gCable, plug, band, lineA, lineB, connA, connB, ringA, ringB, lanyard, lifeHook, chock, driver, ground, ...flow]);
   const bb = new THREE.Box3(), c = V(0, 0, 0), moves = [];
   for (const [parent, dest] of [[scene, truckRoot], [topOnly, tTop], [bottomOnly, tBot]])
     for (const o of parent.children) {
