@@ -186,3 +186,7 @@ body:not(.admin-sim) .admin-only { display: none !important; }
   #app .sheet { max-width: none; min-height: 100%; border-radius: 0; box-shadow: none; padding: var(--sp-5) var(--sp-4) max(var(--sp-6), env(safe-area-inset-bottom, 0px)); }
   #app .hero { margin: calc(-1 * var(--sp-5)) calc(-1 * var(--sp-4)) var(--sp-1); padding: max(var(--sp-8), env(safe-area-inset-top, 0px)) var(--sp-4) var(--sp-6); border-radius: 0 0 var(--r-page) var(--r-page); }
 }
+/* no text selection or long-press callout while tapping and dragging (phones select labels and panels otherwise);
+   typing fields, the admin tables and the QR link stay selectable */
+body { -webkit-user-select: none; user-select: none; -webkit-touch-callout: none; -webkit-tap-highlight-color: transparent; }
+input, textarea, select, [contenteditable], #app table, .qr-card .url { -webkit-user-select: text; user-select: text; -webkit-touch-callout: default; }
