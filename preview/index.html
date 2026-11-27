@@ -249,6 +249,9 @@ body:not(.easy) > header h1::before { content: ""; width: 30px; height: 30px; bo
 .steps button { border-radius: 10px; transition: border-color .12s, background .12s; }
 .steps button.done .n { background: var(--accent); color: #fff; }
 .fbtn { border-radius: 10px; }
+.views #sfxBtn { margin-left: 6px; }
+.views #sfxBtn[aria-pressed="true"] { background: color-mix(in srgb, var(--surface) 82%, transparent); color: var(--ink); }
+.views #sfxBtn[aria-pressed="false"] { color: var(--muted); text-decoration: line-through; }
 </style>
 
 <header>
@@ -265,6 +268,7 @@ body:not(.easy) > header h1::before { content: ""; width: 30px; height: 30px; bo
         <button type="button" data-view="fp" aria-pressed="false">1인칭</button>
         <button type="button" data-view="lc" aria-pressed="false">하부 LC</button>
         <button type="button" data-view="work" aria-pressed="false" id="viewWork">상부 LC</button>
+        <button type="button" id="sfxBtn" aria-pressed="true" title="효과음 켜기/끄기">효과음 켜짐</button>
       </div>
       <div class="hud" id="hud" aria-live="off">
         <span>인체 전위</span><b id="kv">0.0 kV</b><i id="mj">방전 시 0.00 mJ</i>
@@ -428,7 +432,7 @@ new MutationObserver(applyBg).observe(document.documentElement, { attributes: tr
 const skyPhoto = new Promise((res) => new THREE.TextureLoader().load("tex/sky_2k.jpg", (t) => { t.colorSpace = THREE.SRGBColorSpace; res(t); }, undefined, () => res(null)));
 { const pm = new THREE.PMREMGenerator(renderer); scene.environment = pm.fromScene(new RoomEnvironment(renderer), 0.04).texture; // until the sky HDRI arrives
   skyPhoto.then((t) => { if (t) scene.environment = pm.fromEquirectangular(t).texture; }); } // overcast sky photo: soft light and real reflections
-scene.add(new THREE.HemisphereLight(0xeef2f6, 0x5f625e, 0.42)); // less fill: shapes read better
+scene.add(new THREE.HemisphereLight(0xeef2f6, 0x6a6458, 0.42)); // less fill: shapes read better; warm bounce from the concrete
 const sun = new THREE.DirectionalLight(0xfff0dc, 2.1); // brighter, warmer key light: clearer shadows and form
 sun.shadow.bias = -0.0004; sun.shadow.normalBias = 0.02;
 sun.position.set(-6, 15, -10);
@@ -758,6 +762,12 @@ for (let y = 1.0; y < 3.7; y += 0.3) { const r = cyl(0.016, 0.34, M(0x9aa19d, { 
 const truck = new THREE.Group(); truck.scale.x = -1; truck.position.x = 0.6;
 truck.add(...scene.children.slice(truckFrom)); scene.add(truck);
 // (one bay in focus: no second tanker two bays over)
+// contact shadows: a soft dark patch where the tanker and the driver meet the ground (the sun's shadow map is too coarse there)
+const blob = (w, d, a) => { const c = document.createElement("canvas"); c.width = c.height = 128; const g = c.getContext("2d"), gr = g.createRadialGradient(64, 64, 4, 64, 64, 64);
+  gr.addColorStop(0, `rgba(0,0,0,${a})`); gr.addColorStop(0.55, `rgba(0,0,0,${a * 0.45})`); gr.addColorStop(1, "rgba(0,0,0,0)"); g.fillStyle = gr; g.fillRect(0, 0, 128, 128);
+  const t = new THREE.CanvasTexture(c), m = new THREE.Mesh(new THREE.PlaneGeometry(w, d), new THREE.MeshBasicMaterial({ map: t, transparent: true, depthWrite: false, toneMapped: false, polygonOffset: true, polygonOffsetFactor: -3 }));
+  m.rotation.x = -Math.PI / 2; m.raycast = () => {}; m.renderOrder = 1; return m; };
+{ const b = blob(12.4, 3.4, 0.55); b.position.set(-0.45, 0.014, 0); truck.add(b); }
 const PARK = V(4.15, 0, 0), WB = 7.45, TRUCK_X = [-8.6, 2.3], TRUCK_Z = 1.3; // rear-axle pivot at the bay, wheelbase, body outline around the pivot
 const drive = { on: false, v: 0, steer: 0, P: PARK.clone(), yaw: 0, hitAt: -9, fastAt: -9 };
 function truckHome() { return !drive.on && drive.P.distanceToSquared(PARK) < 1e-6 && Math.abs(drive.yaw) < 1e-6; }
@@ -1338,7 +1348,7 @@ function stepAction(dt) {
     if (!act.keep && Math.hypot(d.x, d.z) > 0.02) { let r = Math.atan2(d.x, d.z) - driver.rotation.y; r = Math.atan2(Math.sin(r), Math.cos(r)); driver.rotation.y += r * Math.min(1, dt * speedUp * 9); }
     if (dist <= step) { driver.position.copy(act.walk); act = null; }
     else driver.position.addScaledVector(d.normalize(), step);
-    gait += Math.min(dist, step) * 4.5; // one stride cycle per ~1.4 m
+    gait += Math.min(dist, step) * 4.5; sfx.step(gait); // one stride cycle per ~1.4 m
   } else if (act.face) {
     const k = Math.min(1, act.t / 0.4), e = k * k * (3 - 2 * k);
     driver.rotation.y = act.from + (act.to - act.from) * e;
@@ -1880,7 +1890,7 @@ function moveDriver(dt) {
   if (why && !moved) toast(why);
   if (currentView !== "fp") driver.rotation.y = Math.atan2(dir.x, dir.z);
   if (!moved) return;
-  manualMoving = true; gait += driver.position.distanceTo(from) * 4.5;
+  manualMoving = true; gait += driver.position.distanceTo(from) * 4.5; sfx.step(gait);
   if (currentView === "fp") return;
   const delta = driver.position.clone().sub(from);
   camera.position.add(delta); controls.target.add(delta); // the camera keeps its angle and travels with the driver
@@ -1888,9 +1898,31 @@ function moveDriver(dt) {
 }
 
 // doing something by hand: turn to it, reach, then apply
+// ---------- sound: footsteps, clicks, product flow, alarm, fire — synthesised with Web Audio, no files ----------
+const sfx = (() => {
+  let ac = null, on = (() => { try { return localStorage.getItem("sim-sfx") !== "0"; } catch { return true; } })(), flow = null, roar = null, beepAt = 0, lastStep = 0;
+  const start = () => { if (ac) return; try { ac = new (window.AudioContext || window.webkitAudioContext)(); } catch { ac = null; } };
+  addEventListener("pointerdown", start, { once: true }); addEventListener("keydown", start, { once: true }); // browsers allow sound only after a tap or key
+  const noiseBuf = () => { const b = ac.createBuffer(1, ac.sampleRate, ac.sampleRate), d = b.getChannelData(0); for (let i = 0; i < d.length; i++) d[i] = Math.random() * 2 - 1; return b; };
+  const loop = (freq, q, gain) => { const src = ac.createBufferSource(); src.buffer = noiseBuf(); src.loop = true; const f = ac.createBiquadFilter(); f.type = "lowpass"; f.frequency.value = freq; f.Q.value = q;
+    const g = ac.createGain(); g.gain.value = 0; src.connect(f).connect(g).connect(ac.destination); src.start(); return g; };
+  const blip = (type, freq, dur, vol, sweep = 1) => { if (!ac || !on) return; const o = ac.createOscillator(), g = ac.createGain(), t = ac.currentTime;
+    o.type = type; o.frequency.setValueAtTime(freq, t); o.frequency.exponentialRampToValueAtTime(freq * sweep, t + dur); g.gain.setValueAtTime(vol, t); g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
+    o.connect(g).connect(ac.destination); o.start(t); o.stop(t + dur + 0.02); };
+  const thud = (vol) => { if (!ac || !on) return; const src = ac.createBufferSource(); src.buffer = noiseBuf(); const f = ac.createBiquadFilter(); f.type = "lowpass"; f.frequency.value = 420;
+    const g = ac.createGain(), t = ac.currentTime; g.gain.setValueAtTime(vol, t); g.gain.exponentialRampToValueAtTime(0.0001, t + 0.09); src.connect(f).connect(g).connect(ac.destination); src.start(t, Math.random() * 0.5, 0.1); };
+  return {
+    get on() { return on; }, set on(v) { on = v; try { localStorage.setItem("sim-sfx", v ? "1" : "0"); } catch {} if (!v && flow) { flow.gain.value = 0; roar.gain.value = 0; } },
+    step(g) { const n = Math.floor(g / Math.PI); if (n !== lastStep) { lastStep = n; thud(0.16); } },
+    click() { blip("square", 1800, 0.05, 0.05, 0.6); thud(0.12); if (navigator.vibrate) try { navigator.vibrate(12); } catch {} },
+    update(loading, alarm, fire) { if (!ac || ac.state !== "running") return; if (!flow) { flow = loop(300, 0.7, 0); roar = loop(700, 0.4, 0); }
+      const k = 0.08; flow.gain.value += ((on && loading ? 0.045 : 0) - flow.gain.value) * k; roar.gain.value += ((on && fire ? 0.12 : 0) - roar.gain.value) * k;
+      if (on && alarm && ac.currentTime - beepAt > 0.6) { beepAt = ac.currentTime; blip("square", 880, 0.22, 0.05); } },
+  };
+})();
 function doAct(target, fn, o = {}) {
   queue.push(face(target), now_(() => { if (o.left) state.reachL = true; else state.reach = o.up ? "up" : true; }),
-    wait(target.y - driver.position.y < 0.7 ? 0.9 : 0.35, () => { state.reach = false; state.reachL = false; fn(); staticDischarge(target); }));
+    wait(target.y - driver.position.y < 0.7 ? 0.9 : 0.35, () => { state.reach = false; state.reachL = false; fn(); sfx.click(); staticDischarge(target); }));
   render();
 }
 const ITEMS = [
@@ -2579,6 +2611,7 @@ $("driveIn").addEventListener("click", () => {   // a fresh arrival: start at th
 $("driveBoard").addEventListener("click", boardTruck);
 
 // a small handle for an outer training app (login, guided steps, exams); unused when the page runs alone
+{ const b = $("sfxBtn"), show = () => { b.textContent = sfx.on ? "효과음 켜짐" : "효과음 꺼짐"; b.setAttribute("aria-pressed", String(sfx.on)); }; show(); b.addEventListener("click", () => { sfx.on = !sfx.on; show(); }); }
 window.SIM = { STEPS, state, T, fx, busy, resetScene, runStep, goView, stepEnabled, mode: () => mode, setAuto, log, fightFire, resetCam, render };
 // ---------- start ----------
 resetScene("top");
@@ -2627,6 +2660,11 @@ function resize() { const w = stage.clientWidth, h = stage.clientHeight; if (las
   ZS = Math.max(1, Math.min(2, Math.min(w / 1000, h / 600))); rootS.setProperty("--zs", ZS.toFixed(3)); renderer.setSize(w, h, false); camera.aspect = w / h; camera.updateProjectionMatrix(); }
 new ResizeObserver(resize).observe(stage); resize();
 goView(homeView(), true); // phones and tablets stay in the third-person view (no view buttons)
+if (!LOWEND && !reduceMotion) { // opening shot: a slow sweep down from high over the yard to the bay (plays when the 3D view is first shown)
+  const toP = camera.position.clone(), toT = controls.target.clone();
+  camera.position.set(-26, 24, -34); controls.target.set(0, 1.5, 0);
+  tween = { from: camera.position.clone(), fromT: controls.target.clone(), to: toP, toT, t: 0, dur: 2.6 };
+}
 
 const tmp = new THREE.Vector3();
 let last = performance.now(), flowT = 0, shownQ = -1;
@@ -2637,6 +2675,7 @@ function frame(nowMs) {
   if (LOWEND && currentView === "free" && !tween && !fx.fire.on && !scen.on && !drive.on) goView("follow"); // a fire or demo close-up is over: back behind the driver
   const dt = Math.min(0.05, (nowMs - last) / 1000); last = nowMs;
   stepAction(dt);
+  sfx.update(state.loading && !state.paused, state.alarm, fx.fire.on);
   autoTick(dt);
   updateDrive(dt);
   moveDriver(dt);
@@ -2659,7 +2698,7 @@ function frame(nowMs) {
   if (currentView === "fp") { if (drive.on) cabCam(); else fpCam(dt); }
   else {
     if (tween) {
-      tween.t = Math.min(1, tween.t + dt / 0.9);
+      tween.t = Math.min(1, tween.t + dt / (tween.dur || 0.9));
       const e = 1 - Math.pow(1 - tween.t, 3);
       camera.position.lerpVectors(tween.from, tween.to, e);
       controls.target.lerpVectors(tween.fromT, tween.toT, e);
