@@ -2308,7 +2308,7 @@ const bannerEl = $("banner");
 let bannerT = 0;
 function banner(kind, text, sub) {
   clearTimeout(bannerT);
-  if (kind === "fire") bannerT = setTimeout(() => (bannerEl.hidden = true), 3000); // "fire" is shown for 3 s so it does not cover the scene
+  bannerT = setTimeout(() => (bannerEl.hidden = true), 3000); // every demo banner ("화재 발생", "방전 없음", …) shows for 3 s so it does not cover the scene
   bannerEl.replaceChildren(text); if (sub) { const s = document.createElement("small"); s.textContent = sub; bannerEl.append(s); }
   bannerEl.className = "banner" + (kind === "safe" ? " safe" : ""); bannerEl.hidden = false;
 }
