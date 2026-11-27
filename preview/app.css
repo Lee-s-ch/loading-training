@@ -3,6 +3,13 @@
   --e-bg: #eef2ef; --e-sheet: #ffffff; --e-ink: #14201b; --e-muted: #55625c; --e-line: #cfd8d3;
   --e-accent: #0a7a52; --e-accent-ink: #ffffff; --e-alt: #1f5c8f; --e-warn: #b4371f; --e-warn-soft: #fbe9e4; --e-ok-soft: #e1f2e9;
   --e-font: "Noto Sans KR", "Malgun Gothic", "Apple SD Gothic Neo", sans-serif;
+  --e-deep: #0a5c3e; /* PPT dk2 */
+  /* layout tokens after the Astryx design system (spacing 0.25rem steps, radius scale, three elevations) */
+  --sp-1: .25rem; --sp-2: .5rem; --sp-3: .75rem; --sp-4: 1rem; --sp-5: 1.25rem; --sp-6: 1.5rem; --sp-8: 2rem;
+  --r-inner: 4px; --r-el: 8px; --r-cont: 12px; --r-page: 28px;
+  --sh-low: 0 1px 1px rgb(0 0 0 / .08), 0 2px 8px rgb(0 0 0 / .08);
+  --sh-med: 0 1px 2px rgb(0 0 0 / .08), 0 2px 12px rgb(0 0 0 / .10);
+  --sh-high: 0 2px 2px rgb(0 0 0 / .08), 0 8px 24px rgb(0 0 0 / .12);
 }
 @media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) {
   --e-bg: #121815; --e-sheet: #1b2420; --e-ink: #e8efeb; --e-muted: #a3b1aa; --e-line: #33413a;
@@ -136,3 +143,46 @@ body.easy .stage { height: calc(100dvh - 20px) !important; border-radius: 0; }
 @media (prefers-reduced-motion: reduce) { * { scroll-behavior: auto !important; } }
 /* truck boarding and driving: only in the admin's simulator screen (hidden, not removed) */
 body:not(.admin-sim) .admin-only { display: none !important; }
+
+/* ---------- design pass (Astryx tokens, PPT colours): hero, action cards, chips; phones edge to edge ---------- */
+#app .sheet { border: 0; border-radius: var(--r-page); padding: var(--sp-6) var(--sp-5); gap: var(--sp-4); box-shadow: var(--sh-med); overflow: hidden; }
+#app .hero { margin: calc(-1 * var(--sp-6)) calc(-1 * var(--sp-5)) var(--sp-1); padding: var(--sp-8) var(--sp-5) var(--sp-6);
+  background: radial-gradient(120% 140% at 100% 0%, color-mix(in srgb, var(--e-accent) 70%, #fff 0%) 0%, var(--e-deep) 70%); color: #fff; display: flex; flex-wrap: nowrap; gap: var(--sp-4); align-items: center; } /* overrides the simulator page's global header rule */
+#app .hero-text { min-width: 0; }
+#app .hero-mark { flex: none; width: 56px; height: 56px; border-radius: 16px; background: rgb(255 255 255 / .14); display: grid; place-items: center; box-shadow: inset 0 0 0 1px rgb(255 255 255 / .22); }
+#app .hero-mark .ic { width: 32px; height: 32px; }
+#app .hero h1 { color: #fff; font-size: 28px; }
+#app .hero p { margin: var(--sp-1) 0 0; color: rgb(255 255 255 / .82); font-size: 16px; }
+#app .chips { display: flex; flex-wrap: wrap; gap: var(--sp-2); margin-top: var(--sp-3); }
+#app .chip-i { display: inline-flex; align-items: center; gap: 6px; font-size: 15px; padding: 4px 10px; border-radius: 999px; background: rgb(255 255 255 / .14); color: #fff; }
+#app .chip-i.strong { background: #fff; color: var(--e-deep); font-weight: 700; }
+#app .chip-i .ic { width: 16px; height: 16px; }
+#app .state { border-radius: var(--r-cont); padding: var(--sp-3) var(--sp-4); border: 1px solid var(--e-line); }
+#app .state.pass, #app .state.fail { border-color: transparent; }
+#app .menu { gap: var(--sp-3); }
+.action { all: unset; box-sizing: border-box; cursor: pointer; display: flex; align-items: center; gap: var(--sp-4); width: 100%; min-height: 76px; padding: var(--sp-4); border-radius: var(--r-cont);
+  background: var(--e-sheet); color: var(--e-ink); border: 1px solid var(--e-line); box-shadow: var(--sh-low); font-family: var(--e-font); transition: transform .12s, box-shadow .12s, border-color .12s; }
+.action:hover { box-shadow: var(--sh-med); border-color: color-mix(in srgb, var(--e-accent) 45%, var(--e-line)); }
+.action:active { transform: scale(.99); }
+.action:focus-visible { outline: 3px solid var(--e-alt); outline-offset: 2px; }
+.action-ic { flex: none; width: 48px; height: 48px; border-radius: var(--r-cont); display: grid; place-items: center; background: var(--e-ok-soft); color: var(--e-accent); }
+.action-ic .ic { width: 26px; height: 26px; }
+.action-text { flex: 1; display: flex; flex-direction: column; gap: 2px; text-align: left; }
+.action-text b { font-size: 20px; }
+.action-text small { font-size: 15px; color: var(--e-muted); }
+.action .chev { width: 20px; height: 20px; color: var(--e-muted); flex: none; }
+.action.primary { background: var(--e-accent); border-color: var(--e-accent); color: var(--e-accent-ink); }
+.action.primary .action-ic { background: rgb(255 255 255 / .18); color: inherit; }
+.action.primary small, .action.primary .chev { color: inherit; opacity: .85; }
+.action.alt .action-ic { background: color-mix(in srgb, var(--e-alt) 14%, transparent); color: var(--e-alt); }
+.action:disabled { opacity: .6; cursor: progress; }
+#app input:not([type="checkbox"]):not([type="radio"]), #app select { border-width: 1.5px; border-radius: var(--r-el); min-height: 52px; background: var(--e-sheet); }
+#app input:not([type="checkbox"]):not([type="radio"]):focus { border-color: var(--e-accent); box-shadow: 0 0 0 3px color-mix(in srgb, var(--e-accent) 22%, transparent); outline: none; }
+.big { border-radius: var(--r-cont); min-height: 56px; }
+.big.primary { box-shadow: var(--sh-low); }
+#app .fuel label, #app .consent { border-radius: var(--r-cont); }
+@media (max-width: 600px) { /* phones: the sheet fills the screen, the hero runs to the edges */
+  #app { padding: 0; }
+  #app .sheet { max-width: none; min-height: 100%; border-radius: 0; box-shadow: none; padding: var(--sp-5) var(--sp-4) max(var(--sp-6), env(safe-area-inset-bottom, 0px)); }
+  #app .hero { margin: calc(-1 * var(--sp-5)) calc(-1 * var(--sp-4)) var(--sp-1); padding: max(var(--sp-8), env(safe-area-inset-top, 0px)) var(--sp-4) var(--sp-6); border-radius: 0 0 var(--r-page) var(--r-page); }
+}
