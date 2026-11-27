@@ -53,7 +53,21 @@ function screen(html) { app.hidden = false; app.innerHTML = `<div class="sheet">
 const $a = (sel) => app.querySelector(sel);
 function msg(text, ok = false) { const m = $a(".msg"); if (m) { m.textContent = text; m.classList.toggle("ok", ok); } }
 function busyBtn(btn, on) { if (btn) { btn.disabled = on; btn.dataset.label ??= btn.textContent; btn.textContent = on ? "잠시만요…" : btn.dataset.label; } }
-const waitSim = () => new Promise((res) => { const t = () => (window.SIM ? res(window.SIM) : setTimeout(t, 50)); t(); });
+const waitSim = () => new Promise((res) => { // the 3D page: wait up to 20 s, then explain instead of hanging (blocked CDN, no WebGL)
+  const t0 = Date.now();
+  const t = () => { if (window.SIM) return res(window.SIM); if (Date.now() - t0 < 20000) return setTimeout(t, 50); simFailed(); };
+  t();
+});
+function simFailed() {
+  leaveSim(); free = false; document.body.classList.remove("free"); backBtn.hidden = true;
+  const gl = (() => { try { return !!document.createElement("canvas").getContext("webgl2"); } catch { return false; } })();
+  screen(`<h1>3D 화면을 불러오지 못했습니다</h1>
+    <p class="lead">${gl ? "인터넷 연결이 느리거나, 회사·기관 네트워크에서 3D 프로그램 주소(cdn.jsdelivr.net)를 막고 있을 수 있습니다." : "이 기기나 브라우저가 3D 화면(WebGL)을 지원하지 않습니다. 다른 기기나 최신 크롬·사파리로 열어 주세요."}</p>
+    <button class="big primary" id="reload" type="button">다시 불러오기</button>
+    <button class="big ghost" id="homeBack" type="button">처음 화면으로</button>`);
+  $a("#reload").onclick = () => location.reload();
+  $a("#homeBack").onclick = () => (me ? (me.role === "admin" ? showAdmin() : showHome()) : showLogin());
+}
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
 // voice guide (browser speech; quality depends on the device)
@@ -155,7 +169,7 @@ function showSignup() {
     } catch (e) { msg(errText(e)); } finally { busyBtn(b, false); }
   };
 }
-async function logout() { document.body.classList.remove("admin-sim"); const t = token; token = null; me = null; sess.set("edu-token", null); showLogin(); try { if (t) await rpc("logout", { p_token: t }); } catch {} }
+async function logout() { document.body.classList.remove("admin-sim", "free"); free = false; backBtn.hidden = true; const t = token; token = null; me = null; sess.set("edu-token", null); showLogin(); try { if (t) await rpc("logout", { p_token: t }); } catch {} }
 
 // ---------- driver home and records ----------
 async function showHome() {
@@ -212,11 +226,12 @@ function choose(buttons) { // resolve with the pressed button's value, or "quit"
     coach.querySelectorAll("[data-v]").forEach((b) => (b.onclick = () => res(buttons[+b.dataset.v])));
   });
 }
-async function perform(SIM, i) { // let the driver act out step i, then wait until it is really done
+async function perform(SIM, i) { // let the driver act out step i; true = really done, false = timed out, null = quit
   const st = SIM.STEPS[SIM.mode()][i], t0 = Date.now();
-  while (!SIM.stepEnabled(i) && Date.now() - t0 < 5000) { if (session.quit) return; await sleep(100); }
-  SIM.runStep(i);
-  while (!(st.done() && !SIM.busy())) { if (session.quit) return; await sleep(150); if (Date.now() - t0 > 180000) break; }
+  while (!SIM.stepEnabled(i) && Date.now() - t0 < 5000) { if (session.quit) return null; await sleep(100); }
+  if (!st.done()) SIM.runStep(i);
+  while (!(st.done() && !SIM.busy())) { if (session.quit) return null; await sleep(150); if (Date.now() - t0 > 180000) return false; }
+  return true;
 }
 async function askEvent(ev, head, kind) { // an abnormal situation: training shows the answer, the exam asks it. Resolves true (first try), false, or "quit"
   if (kind === "training") {
@@ -279,8 +294,14 @@ async function runSession(kind) {
     if (session.quit) break;
     if (first) firstTry++;
     card(`<p class="working"><span class="spin" aria-hidden="true"></span>작업 중 ${i + 1}/${steps.length} · ${esc(steps[i].t)}</p>`, true);
-    await perform(SIM, i);
-    if (!session.quit) doneSteps = i + 1;
+    let ok = await perform(SIM, i);
+    while (ok === false && !session.quit) { // not finished in time: never count it, ask to try again
+      card(`${head}<h2 class="bad">작업이 끝나지 않았습니다</h2><p>${esc(steps[i].t)} 단계가 완료되지 않았습니다. 다시 시도합니다.</p><button class="big primary" data-v="0" type="button">다시 시도</button>`);
+      if ((await choose([1])) === "quit" || session.quit) break;
+      card(`<p class="working"><span class="spin" aria-hidden="true"></span>작업 중 ${i + 1}/${steps.length} · ${esc(steps[i].t)}</p>`, true);
+      ok = await perform(SIM, i);
+    }
+    if (!session.quit && ok) doneSteps = i + 1;
   }
   const quit = session.quit; session = null; SIM.setAuto(false);
   if (quit) {
@@ -296,7 +317,7 @@ async function runSession(kind) {
   screen(kind === "exam" ? `
     ${hero("시험 결과", esc(modeName(me.fuel)))}
     <div class="result ${passed ? "pass" : "fail"}"><span class="ring" style="--p:${score}"><span class="score">${score}<small>점</small></span></span><div><b>${passed ? "합격" : "불합격"}</b><small>합격 기준 ${PASS}점</small></div></div>
-    <p class="lead">${passed ? "수고하셨습니다. 합격 기록이 저장되었습니다." : `${PASS}점 이상이면 합격입니다. 교육을 한 번 더 받고 다시 도전하세요.`}</p>
+    <p class="lead">${passed ? (err ? "합격 점수입니다. 다만 기록이 저장되지 않아 합격으로 인정되지 않을 수 있습니다. 출하장 사무실(관리자)에 알려 주세요." : "수고하셨습니다. 합격 기록이 저장되었습니다.") : `${PASS}점 이상이면 합격입니다. 교육을 한 번 더 받고 다시 도전하세요.`}</p>
     ${mistakes.length ? `<p>틀린 단계: ${esc(mistakes.join(", "))}</p>` : "<p>모든 단계를 한 번에 맞혔습니다.</p>"}
     ${err ? `<p class="msg">${esc(err)} 결과가 저장되지 않았습니다.</p>` : ""}
     <button class="big primary" id="home" type="button">처음 화면으로</button>` : `
@@ -315,11 +336,12 @@ async function renderStats(body) { // which steps drivers get wrong most often i
   let list; try { list = await rpc("admin_all_attempts", { p_token: token }); } catch (e) { body.textContent = errText(e); return; }
   const SIM = await waitSim(), out = [];
   for (const m of ["bottom", "top"]) {
-    const ex = list.filter((a) => a.kind === "exam" && a.mode === m), n = ex.length;
+    const isQuit = (a) => (a.mistakes || []).some((x) => String(x).startsWith("중단"));
+    const all = list.filter((a) => a.kind === "exam" && a.mode === m), ex = all.filter((a) => !isQuit(a)), n = ex.length; // finished exams only
     const names = [...SIM.STEPS[m].map((s) => s.t), ...EVENTS[m].map((e) => e.tag).filter((t, i, all) => all.indexOf(t) === i)];
     const rows = names.map((t) => ({ t, c: ex.filter((a) => Array.isArray(a.mistakes) && a.mistakes.includes(t)).length })).sort((x, y) => y.c - x.c);
-    const quit = ex.filter((a) => (a.mistakes || []).some((x) => String(x).startsWith("중단"))).length;
-    out.push(`<h2>${m === "bottom" ? "하부 출하 (휘발유)" : "상부 출하 (등유·경유)"} · 시험 ${n}회${quit ? ` (중단 ${quit}회)` : ""}</h2>` + (n ? `<div class="table-wrap"><table class="stats"><thead><tr><th>단계·상황</th><th>틀린 시험</th><th>비율</th></tr></thead><tbody>${rows.map((r) => {
+    const quit = all.length - n;
+    out.push(`<h2>${m === "bottom" ? "하부 출하 (휘발유)" : "상부 출하 (등유·경유)"} · 끝까지 본 시험 ${n}회${quit ? ` (중단 ${quit}회는 제외)` : ""}</h2>` + (n ? `<div class="table-wrap"><table class="stats"><thead><tr><th>단계·상황</th><th>틀린 시험</th><th>비율</th></tr></thead><tbody>${rows.map((r) => {
       const pct = Math.round((100 * r.c) / n);
       return `<tr><td>${esc(r.t)}</td><td class="num">${r.c}회</td><td><span class="meter"><i style="width:${pct}%"></i></span> <span class="num">${pct}%</span></td></tr>`; }).join("")}</tbody></table></div>` : '<p class="lead">아직 시험 기록이 없습니다.</p>'));
   }
@@ -484,7 +506,7 @@ async function showQR() {
 let idleT = 0;
 function poke() {
   clearTimeout(idleT);
-  if (token && !session) idleT = setTimeout(() => { if (token && !session && !free) { app.classList.remove("wide"); logout().then(() => msg("한동안 사용이 없어 로그아웃했습니다.")); } }, (me?.role === "admin" ? 30 : 5) * 60000);
+  if (token && !session) idleT = setTimeout(() => { if (token && !session) { app.classList.remove("wide"); logout().then(() => msg("한동안 사용이 없어 로그아웃했습니다.")); } }, (me?.role === "admin" ? 30 : 5) * 60000);
 }
 for (const ev of ["pointerdown", "keydown"]) addEventListener(ev, poke, { passive: true });
 
