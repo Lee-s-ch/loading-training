@@ -37,6 +37,18 @@ const quitBtn = document.createElement("button"); quitBtn.id = "quit"; quitBtn.t
 const voiceBtn = document.createElement("button"); voiceBtn.id = "voiceBtn"; voiceBtn.type = "button"; voiceBtn.hidden = true; // voice on/off, top right of the training / exam screen
 const backBtn = document.createElement("button"); backBtn.id = "backAdmin"; backBtn.type = "button"; backBtn.textContent = "관리자 화면으로"; backBtn.hidden = true;
 let me = null, token = sess.get("edu-token");
+const IC = { // 24px line icons
+  shield: '<path d="M12 3l7 3v5c0 4.5-3 8.3-7 10-4-1.7-7-5.5-7-10V6l7-3z"/><path d="M12 8.5c1.6 2 2.6 3.4 2.6 4.6a2.6 2.6 0 01-5.2 0c0-1.2 1-2.6 2.6-4.6z"/>',
+  book: '<path d="M4 5.5A2.5 2.5 0 016.5 3H20v15H6.5A2.5 2.5 0 004 20.5v-15z"/><path d="M4 20.5A2.5 2.5 0 016.5 23H20"/><path d="M8 7.5h8M8 11h6"/>',
+  check: '<rect x="4" y="3" width="16" height="18" rx="2.5"/><path d="M8.5 12.5l2.4 2.4 4.6-5"/><path d="M9 3v2h6V3"/>',
+  cube: '<path d="M12 2.8l8 4.4v9.6l-8 4.4-8-4.4V7.2l8-4.4z"/><path d="M4 7.2l8 4.4 8-4.4M12 11.6v9.6"/>',
+  list: '<path d="M9 6h11M9 12h11M9 18h11"/><circle cx="4.5" cy="6" r="1"/><circle cx="4.5" cy="12" r="1"/><circle cx="4.5" cy="18" r="1"/>',
+  truck: '<path d="M2.5 6.5h11v9h-11z"/><path d="M13.5 9.5h4l3 3v3h-7"/><circle cx="6.5" cy="17.5" r="1.8"/><circle cx="16.5" cy="17.5" r="1.8"/>',
+  chevron: '<path d="M9 5l7 7-7 7"/>',
+};
+const icon = (n, cls = "") => `<svg class="ic ${cls}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${IC[n]}</svg>`;
+const hero = (title, sub, extra = "") => `<header class="hero"><span class="hero-mark">${icon("shield")}</span><div class="hero-text"><h1>${title}</h1>${sub ? `<p>${sub}</p>` : ""}${extra}</div></header>`;
+const actionCard = (id, ic, title, sub, cls = "") => `<button class="action ${cls}" id="${id}" type="button"><span class="action-ic">${icon(ic)}</span><span class="action-text"><b>${title}</b>${sub ? `<small>${sub}</small>` : ""}</span>${icon("chevron", "chev")}</button>`;
 function screen(html) { app.hidden = false; app.innerHTML = `<div class="sheet">${html}</div>`; app.scrollTop = 0; return app; }
 const $a = (sel) => app.querySelector(sel);
 function msg(text, ok = false) { const m = $a(".msg"); if (m) { m.textContent = text; m.classList.toggle("ok", ok); } }
@@ -83,7 +95,7 @@ function say(text) { talk.text = text; speakFrom(0); }
 // ---------- login / signup ----------
 function showLogin(note = "") {
   screen(`
-    <h1>출하 안전 교육</h1>
+    ${hero("출하 안전 교육", "유조차 기사용 출하 절차 교육 · 시험")}
     <p class="lead">차량번호와 비밀번호로 들어갑니다.</p>
     <form id="loginForm" class="form">
       <label for="lp">차량번호</label><input id="lp" autocomplete="username" placeholder="예: 12가3456" required>
@@ -107,8 +119,7 @@ function showLogin(note = "") {
 }
 function showSignup() {
   screen(`
-    <h1>회원가입</h1>
-    <p class="lead">가입 신청 뒤 관리자가 승인하면 교육을 받을 수 있습니다.</p>
+    ${hero("회원가입", "가입 신청 뒤 관리자가 승인하면 교육을 받을 수 있습니다.")}
     <form id="signForm" class="form">
       <label for="sp">차량번호</label><input id="sp" placeholder="예: 12가3456" required>
       <label for="sw">비밀번호 (4자 이상)</label><input id="sw" type="password" autocomplete="new-password" required>
@@ -149,15 +160,13 @@ async function logout() { document.body.classList.remove("admin-sim"); const t =
 // ---------- driver home and records ----------
 async function showHome() {
   const s = screen(`
-    <p class="eyebrow">${esc(me.plate)} · ${esc(me.company)}</p>
-    <h1>${esc(me.name)} 기사님</h1>
-    <p class="lead">교육 과정: <b>${esc(modeName(me.fuel))}</b></p>
+    ${hero(`${esc(me.name)} 기사님`, "", `<div class="chips"><span class="chip-i">${icon("truck")}${esc(me.plate)}</span><span class="chip-i">${esc(me.company)}</span><span class="chip-i strong">${esc(modeName(me.fuel))}</span></div>`)}
     <div class="state" id="passState">기록을 불러오는 중…</div>
     <div class="menu">
-      <button class="big primary" id="goTrain" type="button">교육 받기<small>순서를 하나씩 배웁니다</small></button>
-      <button class="big primary alt" id="goExam" type="button">시험 보기<small>${PASS}점 이상 합격</small></button>
-      <button class="big ghost" id="goFree" type="button">자유 시뮬레이터<small>기록 없이 마음대로 조작해 봅니다</small></button>
-      <button class="big ghost" id="goRec" type="button">내 기록 보기</button>
+      ${actionCard("goTrain", "book", "교육 받기", "순서를 하나씩 배웁니다", "primary")}
+      ${actionCard("goExam", "check", "시험 보기", `${PASS}점 이상 합격`, "alt")}
+      ${actionCard("goFree", "cube", "자유 시뮬레이터", "기록 없이 마음대로 조작해 봅니다")}
+      ${actionCard("goRec", "list", "내 기록 보기", "교육·시험 이력")}
     </div>
     <div class="row-end"><button class="link" id="out" type="button">로그아웃</button></div>`);
   $a("#goTrain").onclick = () => runSession("training");
