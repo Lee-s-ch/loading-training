@@ -190,7 +190,7 @@ function recordRows(list) {
     <td>${esc((Array.isArray(a.mistakes) ? a.mistakes : []).join(", ")) || "-"}</td></tr>`).join("")}</tbody></table></div>`;
 }
 async function showMyRecords() {
-  screen(`<h1>내 기록</h1><div id="rec">불러오는 중…</div><button class="big ghost" id="home" type="button">처음 화면으로</button>`);
+  screen(`${hero("내 기록", "교육·시험 이력")}<div id="rec">불러오는 중…</div><button class="big ghost" id="home" type="button">처음 화면으로</button>`);
   $a("#home").onclick = showHome;
   try { $a("#rec").innerHTML = recordRows(await rpc("my_attempts", { p_token: token })); } catch (e) { $a("#rec").textContent = errText(e); }
 }
@@ -247,7 +247,7 @@ async function runSession(kind) {
   const steps = SIM.STEPS[m], mistakes = []; let firstTry = 0, doneSteps = 0;
   const evs = kind === "exam" ? [EVENTS[m][(Math.random() * EVENTS[m].length) | 0]] : EVENTS[m], total = steps.length + (kind === "exam" ? 1 : 0);
   for (let i = 0; i < steps.length && !session.quit; i++) {
-    const head = `<p class="step-no">${i + 1} / ${steps.length} 단계 · ${kind === "exam" ? "시험" : "교육"}</p>`;
+    const head = `<div class="coach-head"><p class="step-no"><span class="tag-k ${kind}">${kind === "exam" ? "시험" : "교육"}</span>${i + 1} / ${steps.length} 단계</p><div class="prog" aria-hidden="true"><i style="width:${Math.round((100 * i) / steps.length)}%"></i></div></div>`;
     for (const ev of evs.filter((e) => e.at === i)) {
       const r = await askEvent(ev, head, kind);
       if (r === "quit") break;
@@ -278,7 +278,7 @@ async function runSession(kind) {
     }
     if (session.quit) break;
     if (first) firstTry++;
-    card(`<p class="working">작업 중 ${i + 1}/${steps.length} · ${esc(steps[i].t)}</p>`, true);
+    card(`<p class="working"><span class="spin" aria-hidden="true"></span>작업 중 ${i + 1}/${steps.length} · ${esc(steps[i].t)}</p>`, true);
     await perform(SIM, i);
     if (!session.quit) doneSteps = i + 1;
   }
@@ -294,13 +294,13 @@ async function runSession(kind) {
   leaveSim(); poke();
   const passed = kind === "exam" && score >= PASS;
   screen(kind === "exam" ? `
-    <p class="eyebrow">시험 결과</p>
-    <div class="result ${passed ? "pass" : "fail"}"><span class="score">${score}<small>점</small></span><b>${passed ? "합격" : "불합격"}</b></div>
+    ${hero("시험 결과", esc(modeName(me.fuel)))}
+    <div class="result ${passed ? "pass" : "fail"}"><span class="ring" style="--p:${score}"><span class="score">${score}<small>점</small></span></span><div><b>${passed ? "합격" : "불합격"}</b><small>합격 기준 ${PASS}점</small></div></div>
     <p class="lead">${passed ? "수고하셨습니다. 합격 기록이 저장되었습니다." : `${PASS}점 이상이면 합격입니다. 교육을 한 번 더 받고 다시 도전하세요.`}</p>
     ${mistakes.length ? `<p>틀린 단계: ${esc(mistakes.join(", "))}</p>` : "<p>모든 단계를 한 번에 맞혔습니다.</p>"}
     ${err ? `<p class="msg">${esc(err)} 결과가 저장되지 않았습니다.</p>` : ""}
     <button class="big primary" id="home" type="button">처음 화면으로</button>` : `
-    <p class="eyebrow">교육 완료</p><h1>수고하셨습니다</h1>
+    ${hero("교육 완료", "수고하셨습니다")}
     <p class="lead">${esc(modeName(me.fuel))} 순서를 끝까지 마쳤습니다. 준비되면 시험을 보세요.</p>
     ${err ? `<p class="msg">${esc(err)} 기록이 저장되지 않았습니다.</p>` : ""}
     <button class="big primary" id="home" type="button">처음 화면으로</button>`);
@@ -331,7 +331,7 @@ const QR_LIB = "https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min
 const siteUrl = () => location.origin + location.pathname;
 async function showAdmin() {
   screen(`
-    <div class="admin-head"><div><p class="eyebrow">관리자 · ${esc(me.name)}</p><h1>출하 안전 교육 관리</h1></div>
+    <div class="admin-head"><div class="admin-title"><span class="hero-mark small">${icon("shield")}</span><div><p class="eyebrow">관리자 · ${esc(me.name)}</p><h1>출하 안전 교육 관리</h1></div></div>
       <div class="admin-actions"><button class="btn" id="qrBtn" type="button">접속 QR 코드</button><button class="btn" id="allXls" type="button">전체 기록 엑셀</button><button class="btn" id="simBtn" type="button">시뮬레이터 상세 화면</button><button class="link" id="out" type="button">로그아웃</button></div></div>
     <label class="auto-ok" id="autoOkRow"><span class="switch"><input type="checkbox" id="autoOk" role="switch" disabled><span></span></span>
       <span><b>가입 자동 승인</b> <small id="autoOkNote">불러오는 중…</small></span></label>
