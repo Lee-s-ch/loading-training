@@ -1694,7 +1694,7 @@ if (LOWEND) controls.enabled = false; // phones and tablets: the view stays behi
 // while the driver acts on his own (auto play, one step, a guided lesson) the view stays behind him: no turning, only zoom (wheel, pinch)
 const easy = () => document.body.classList.contains("easy"); // the guided training / exam screen (app.js): watch only, no direct operation
 const autoCam = () => !drive.on && (autoplay || busy() || easy() || fx.fire.on); // also fire demos and any fire: the view stays behind the driver
-const orbitable = () => currentView === "follow" && !tween && !drive.on && (LOWEND || autoCam()); // drag turns the view around the driver
+const orbitable = () => currentView === "follow" && !tween && !drive.on; // in "follow" a drag always turns the view around the driver (also while walking or running with Shift)
 function zoomBy(f) {
   if (currentView === "fp") return;
   if (currentView === "follow" && !tween) { camZoom = Math.max(0.45, Math.min(2.6, camZoom * f)); return; }
@@ -1891,7 +1891,7 @@ function moveDriver(dt) {
   if (currentView !== "fp") driver.rotation.y = Math.atan2(dir.x, dir.z);
   if (!moved) return;
   manualMoving = true; gait += driver.position.distanceTo(from) * 4.5; sfx.step(gait);
-  if (currentView === "fp") return;
+  if (currentView === "fp" || currentView === "follow") return; // follow stays follow while walking (the follow camera keeps up)
   const delta = driver.position.clone().sub(from);
   camera.position.add(delta); controls.target.add(delta); // the camera keeps its angle and travels with the driver
   if (currentView !== "free" && !LOWEND) { currentView = "free"; pressView(""); tween = null; }
@@ -2694,7 +2694,7 @@ function frame(nowMs) {
   if (screensDirty) { screensDirty = false; drawScreens(); }
   const held = autoCam(); // the driver acts on his own: third person behind him, zoom only
   if (held && currentView !== "follow") goView("follow");
-  controls.enabled = !LOWEND && currentView !== "fp" && !held;
+  controls.enabled = !LOWEND && currentView !== "fp" && currentView !== "follow" && !held; // "follow" is ours: orbit around the driver, no pan (Shift+drag used to pan away)
   if (currentView === "fp") { if (drive.on) cabCam(); else fpCam(dt); }
   else {
     if (tween) {
