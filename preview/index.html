@@ -229,6 +229,26 @@ legend { font-size: 13px; padding: 0; margin-bottom: 6px; }
 .steps button.running .s { color: var(--accent); font-weight: 700; }
 .steps button:disabled { opacity: .45; cursor: not-allowed; }
 @media (prefers-reduced-motion: reduce) { .track .pin, .switch span, .switch span::after { transition: none; } .tag.alert { animation: none; } }
+/* ---------- design pass 3: simulator panels (Astryx radius / shadow scale, PPT colours) ---------- */
+:root { --sh-low: 0 1px 1px rgb(0 0 0 / .06), 0 2px 8px rgb(0 0 0 / .07); --sh-med: 0 1px 2px rgb(0 0 0 / .07), 0 2px 12px rgb(0 0 0 / .09); --deep: #0a5c3e; }
+body:not(.easy) > header h1 { display: inline-flex; align-items: center; gap: 10px; }
+body:not(.easy) > header h1::before { content: ""; width: 30px; height: 30px; border-radius: 9px; flex: none; background: var(--deep) url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='white' stroke-width='1.8' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M12 3l7 3v5c0 4.5-3 8.3-7 10-4-1.7-7-5.5-7-10V6l7-3z'/%3E%3Cpath d='M12 8.5c1.6 2 2.6 3.4 2.6 4.6a2.6 2.6 0 01-5.2 0c0-1.2 1-2.6 2.6-4.6z'/%3E%3C/svg%3E") center / 20px no-repeat; }
+.stage { border: 0; box-shadow: var(--sh-med); }
+.card { border: 0; box-shadow: var(--sh-low); }
+.card h2 { display: flex; align-items: center; gap: 6px; }
+.card h2::before { content: ""; width: 3px; height: 12px; border-radius: 2px; background: var(--accent); }
+.status { box-shadow: var(--sh-low), inset 0 0 0 2px var(--line); }
+.status.ok, .status.run { box-shadow: var(--sh-low), inset 0 0 0 2px var(--accent); }
+.status.stop { box-shadow: var(--sh-low), inset 0 0 0 2px var(--warn); }
+.views button { border: 0; background: color-mix(in srgb, var(--surface) 82%, transparent); backdrop-filter: blur(6px); box-shadow: var(--sh-low); }
+.views button[aria-pressed="true"] { background: var(--accent); color: #fff; }
+.hud, .caption { border: 0; box-shadow: var(--sh-med); }
+.seg label { border-radius: 8px; transition: background .12s, border-color .12s; }
+.seg label:has(input:checked) { border-color: var(--accent); background: var(--accent); color: #fff; }
+.steps { gap: 4px; }
+.steps button { border-radius: 10px; transition: border-color .12s, background .12s; }
+.steps button.done .n { background: var(--accent); color: #fff; }
+.fbtn { border-radius: 10px; }
 </style>
 
 <header>
@@ -367,6 +387,8 @@ import { EffectComposer } from "three/addons/postprocessing/EffectComposer.js";
 import { RenderPass } from "three/addons/postprocessing/RenderPass.js";
 import { GTAOPass } from "three/addons/postprocessing/GTAOPass.js";
 import { OutputPass } from "three/addons/postprocessing/OutputPass.js";
+import { UnrealBloomPass } from "three/addons/postprocessing/UnrealBloomPass.js";
+import { ShaderPass } from "three/addons/postprocessing/ShaderPass.js";
 import { GLTFLoader } from "three/addons/loaders/GLTFLoader.js";
 
 const V = (x, y, z) => new THREE.Vector3(x, y, z);
@@ -381,7 +403,7 @@ const LOWEND = matchMedia("(pointer: coarse)").matches, homeView = () => (LOWEND
 renderer.setPixelRatio(Math.min(window.devicePixelRatio, LOWEND ? 1.5 : 2));
 renderer.shadowMap.enabled = true;
 renderer.shadowMap.type = THREE.PCFSoftShadowMap;
-renderer.toneMapping = THREE.ACESFilmicToneMapping; renderer.toneMappingExposure = 1.15;
+renderer.toneMapping = THREE.ACESFilmicToneMapping; renderer.toneMappingExposure = 1.06; // a touch lower: the stronger sun below carries the brightness, with deeper shade
 stage.prepend(renderer.domElement);
 const canvas = renderer.domElement;
 
@@ -405,8 +427,8 @@ new MutationObserver(applyBg).observe(document.documentElement, { attributes: tr
 const skyPhoto = new Promise((res) => new THREE.TextureLoader().load("tex/sky_2k.jpg", (t) => { t.colorSpace = THREE.SRGBColorSpace; res(t); }, undefined, () => res(null)));
 { const pm = new THREE.PMREMGenerator(renderer); scene.environment = pm.fromScene(new RoomEnvironment(renderer), 0.04).texture; // until the sky HDRI arrives
   skyPhoto.then((t) => { if (t) scene.environment = pm.fromEquirectangular(t).texture; }); } // overcast sky photo: soft light and real reflections
-scene.add(new THREE.HemisphereLight(0xf2f4f6, 0x6d706c, 0.5));
-const sun = new THREE.DirectionalLight(0xfff6ea, 1.5); // overcast: weaker, softer key light
+scene.add(new THREE.HemisphereLight(0xeef2f6, 0x5f625e, 0.42)); // less fill: shapes read better
+const sun = new THREE.DirectionalLight(0xfff0dc, 2.1); // brighter, warmer key light: clearer shadows and form
 sun.shadow.bias = -0.0004; sun.shadow.normalBias = 0.02;
 sun.position.set(-6, 15, -10);
 sun.castShadow = true;
@@ -2567,7 +2589,13 @@ const hq = true;
 const composer = new EffectComposer(renderer, new THREE.WebGLRenderTarget(stage.clientWidth || 1, stage.clientHeight || 1, { type: THREE.HalfFloatType, samples: LOWEND ? 2 : 4 })); // multisampled: smooth edges even with post-processing
 composer.addPass(new RenderPass(scene, camera));
 composer.addPass(new GTAOPass(scene, camera, stage.clientWidth, stage.clientHeight, undefined, { radius: 0.6, distanceExponent: 1.5, thickness: 1, scale: 1.5, samples: 16 }, { lumaPhi: 10, depthPhi: 2, normalPhi: 3, radius: 8, rings: 2, samples: 16 }));
+if (!LOWEND) composer.addPass(new UnrealBloomPass(new THREE.Vector2((stage.clientWidth || 2) / 2, (stage.clientHeight || 2) / 2), 0.3, 0.5, 0.92)); // glow on lamps, alarms and flames only (high threshold); phones skip it
 composer.addPass(new OutputPass());
+composer.addPass(new ShaderPass({ // colour finish: a little more saturation and contrast, a soft vignette
+  uniforms: { tDiffuse: { value: null }, sat: { value: 1.08 }, con: { value: 1.04 }, vig: { value: 0.22 } },
+  vertexShader: "varying vec2 vUv; void main(){ vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }",
+  fragmentShader: "uniform sampler2D tDiffuse; uniform float sat, con, vig; varying vec2 vUv; void main(){ vec4 c = texture2D(tDiffuse, vUv); float l = dot(c.rgb, vec3(0.2126, 0.7152, 0.0722)); c.rgb = mix(vec3(l), c.rgb, sat); c.rgb = (c.rgb - 0.5) * con + 0.5; vec2 d = vUv - 0.5; c.rgb *= 1.0 - vig * dot(d, d) * 1.6; gl_FragColor = c; }",
+}));
 sun.shadow.mapSize.set(LOWEND ? 2048 : 4096, LOWEND ? 2048 : 4096); sun.shadow.map?.dispose(); sun.shadow.map = null;
 let lastWH = ""; // resizing a canvas wipes it, so only resize when the size really changed
 function resize() { const w = stage.clientWidth, h = stage.clientHeight; if (lastWH === w + "x" + h) return; lastWH = w + "x" + h; composer?.setSize(w, h);
