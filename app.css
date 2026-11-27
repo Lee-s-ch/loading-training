@@ -190,3 +190,47 @@ body:not(.admin-sim) .admin-only { display: none !important; }
    typing fields, the admin tables and the QR link stay selectable */
 body { -webkit-user-select: none; user-select: none; -webkit-touch-callout: none; -webkit-tap-highlight-color: transparent; }
 input, textarea, select, [contenteditable], #app table, .qr-card .url { -webkit-user-select: text; user-select: text; -webkit-touch-callout: default; }
+
+/* ---------- design pass 2: training / exam coach, results, records, admin ---------- */
+#coach { border: 0; border-radius: var(--r-page); box-shadow: var(--sh-high); padding: var(--sp-5); gap: var(--sp-3); }
+#coach .coach-head { display: flex; flex-direction: column; gap: var(--sp-2); }
+#coach .step-no { display: flex; align-items: center; gap: var(--sp-2); }
+.tag-k { font-size: 13px; font-weight: 700; padding: 2px 10px; border-radius: 999px; background: var(--e-ok-soft); color: var(--e-accent); }
+.tag-k.exam { background: color-mix(in srgb, var(--e-alt) 14%, transparent); color: var(--e-alt); }
+#coach .prog { height: 6px; border-radius: 999px; background: var(--e-line); overflow: hidden; }
+#coach .prog i { display: block; height: 100%; background: var(--e-accent); border-radius: inherit; transition: width .4s; }
+#coach .opts { counter-reset: opt; gap: var(--sp-2); }
+#coach .big.opt { counter-increment: opt; flex-direction: row; justify-content: flex-start; text-align: left; gap: var(--sp-3); background: var(--e-sheet); border: 1.5px solid var(--e-line); box-shadow: var(--sh-low); font-weight: 600; }
+#coach .big.opt::before { content: counter(opt, upper-alpha); flex: none; width: 32px; height: 32px; border-radius: var(--r-el); display: grid; place-items: center; background: var(--e-bg); color: var(--e-muted); font-weight: 800; font-size: 16px; }
+#coach .big.opt:hover { border-color: var(--e-accent); }
+#coach details { border-top: 1px solid var(--e-line); padding-top: var(--sp-2); }
+#coach .working { display: flex; align-items: center; gap: var(--sp-2); }
+.spin { flex: none; width: 16px; height: 16px; border-radius: 50%; border: 2.5px solid color-mix(in srgb, var(--e-accent) 30%, transparent); border-top-color: var(--e-accent); animation: spin 0.9s linear infinite; }
+@keyframes spin { to { transform: rotate(360deg); } }
+#coach.slim { border-radius: 999px; }
+@media (max-width: 600px) { #coach { left: 0; right: 0; bottom: 0; border-radius: var(--r-page) var(--r-page) 0 0; padding-bottom: max(var(--sp-5), env(safe-area-inset-bottom, 0px)); }
+  #coach.slim { left: max(10px, env(safe-area-inset-left, 0px)); right: max(10px, env(safe-area-inset-right, 0px)); bottom: max(10px, env(safe-area-inset-bottom, 0px)); border-radius: 999px; } }
+#quit, #voiceBtn { border: 0; box-shadow: var(--sh-med); border-radius: var(--r-cont); }
+/* results: a score ring */
+#app .result { align-items: center; gap: var(--sp-5); padding: var(--sp-5); border-radius: var(--r-cont); }
+#app .result .ring { --c: var(--e-accent); flex: none; width: 128px; height: 128px; border-radius: 50%; display: grid; place-items: center;
+  background: radial-gradient(closest-side, var(--e-sheet) 78%, transparent 79% 100%), conic-gradient(var(--c) calc(var(--p) * 1%), color-mix(in srgb, var(--c) 18%, transparent) 0); }
+#app .result.fail .ring { --c: var(--e-warn); }
+#app .result .score { font-size: 40px; }
+#app .result .score small { font-size: 18px; }
+#app .result div { display: flex; flex-direction: column; gap: 2px; }
+#app .result div small { font-size: 15px; color: var(--e-muted); font-weight: 500; }
+/* records and admin tables */
+#app .table-wrap { border-radius: var(--r-cont); box-shadow: var(--sh-low); border-color: var(--e-line); }
+#app tbody tr:nth-child(even) td { background: color-mix(in srgb, var(--e-bg) 55%, transparent); }
+#app tbody tr:hover td { background: var(--e-ok-soft); }
+#app th { position: sticky; top: 0; z-index: 1; }
+/* admin: compact branded header, pill tabs */
+#app .admin-title { display: flex; align-items: center; gap: var(--sp-3); }
+#app .hero-mark.small { width: 48px; height: 48px; border-radius: 14px; background: var(--e-deep); color: #fff; box-shadow: var(--sh-low); }
+#app .hero-mark.small .ic { width: 26px; height: 26px; }
+#app .tabs { border-bottom: 0; background: var(--e-bg); padding: 4px; border-radius: var(--r-cont); gap: 4px; }
+#app .tabs button { border-bottom: 0; margin: 0; border-radius: var(--r-el); padding: 8px 14px; }
+#app .tabs button[aria-selected="true"] { background: var(--e-sheet); color: var(--e-accent); box-shadow: var(--sh-low); }
+.btn { border-radius: var(--r-el); min-height: 36px; box-shadow: var(--sh-low); }
+.btn.ok { box-shadow: none; }
