@@ -395,6 +395,7 @@ import { OutputPass } from "three/addons/postprocessing/OutputPass.js";
 import { UnrealBloomPass } from "three/addons/postprocessing/UnrealBloomPass.js";
 import { ShaderPass } from "three/addons/postprocessing/ShaderPass.js";
 import { GLTFLoader } from "three/addons/loaders/GLTFLoader.js";
+import { DRACOLoader } from "three/addons/loaders/DRACOLoader.js";
 
 const V = (x, y, z) => new THREE.Vector3(x, y, z);
 const $ = (id) => document.getElementById(id);
@@ -623,7 +624,7 @@ const roofMat = M(0x8e959a, { metalness: 0.45, roughness: 0.5 }), lampMat = M(0x
 const greyBox = M(0x9aa7a8, { metalness: 0.35, roughness: 0.55 });
 function numberBoard(n, z) {
   const t = canvasTex(128, 160), g = t.g; g.fillStyle = "#f4f4f0"; g.fillRect(0, 0, 128, 160); g.strokeStyle = "#1f2522"; g.lineWidth = 4; g.strokeRect(2, 2, 124, 156);
-  text(g, "HD", 64, 30, 30, "#1f2522"); text(g, String(n), 64, 92, 70, "#1f2522"); g.fillStyle = "#2a6fb0"; g.fillRect(10, 132, 108, 18); t.t.needsUpdate = true;
+  text(g, String(n), 64, 70, 84, "#1f2522"); t.t.needsUpdate = true; // bay number only, no company mark or colour bar
   const p = new THREE.Mesh(new THREE.PlaneGeometry(0.42, 0.52), new THREE.MeshStandardMaterial({ map: t.t, roughness: 0.6 })); p.position.set(5.76, 3.7, z); p.rotation.y = Math.PI / 2; scene.add(p);
 }
 numberBoard(42, -3.3);
@@ -756,8 +757,8 @@ for (const z of [-1, 1]) box(0.03, 0.5, 0.5, M(0x1d1f1e, { roughness: 0.9 }), V(
 for (const y of [0.98, 1.17]) { const t = cyl(0.075, 3.0, mat.steel, V(-0.3, y, 1.02), scene, 16); t.rotation.z = Math.PI / 2; } // hose tubes (far side)
 box(0.7, 0.42, 0.42, mat.steel, V(1.9, 0.92, 0.95));                         // tool box (far side)
 const ladderMeshes = [];
-for (const z of [-0.62, -0.28]) ladderMeshes.push(cyl(0.022, 2.95, M(0x9aa19d, { metalness: 0.75, roughness: 0.3 }), V(-5.36, 2.3, z), scene, 12));
-for (let y = 1.0; y < 3.7; y += 0.3) { const r = cyl(0.016, 0.34, M(0x9aa19d, { metalness: 0.75, roughness: 0.3 }), V(-5.36, y, -0.45), scene, 10); r.rotation.x = Math.PI / 2; ladderMeshes.push(r); }
+for (const z of [-0.62, -0.28]) ladderMeshes.push(cyl(0.022, 2.95, M(0x9aa19d, { metalness: 0.75, roughness: 0.3 }), V(-5.62, 2.3, z), scene, 12)); // clear of the rear tank head
+for (let y = 1.0; y < 3.7; y += 0.3) { const r = cyl(0.016, 0.34, M(0x9aa19d, { metalness: 0.75, roughness: 0.3 }), V(-5.62, y, -0.45), scene, 10); r.rotation.x = Math.PI / 2; ladderMeshes.push(r); }
 // mirror the truck: the cab now points west, the rear ladder and rear wheels sit east next to the LC
 const truck = new THREE.Group(); truck.scale.x = -1; truck.position.x = 0.6;
 truck.add(...scene.children.slice(truckFrom)); scene.add(truck);
@@ -768,6 +769,19 @@ const blob = (w, d, a) => { const c = document.createElement("canvas"); c.width 
   const t = new THREE.CanvasTexture(c), m = new THREE.Mesh(new THREE.PlaneGeometry(w, d), new THREE.MeshBasicMaterial({ map: t, transparent: true, depthWrite: false, toneMapped: false, polygonOffset: true, polygonOffsetFactor: -3 }));
   m.rotation.x = -Math.PI / 2; m.raycast = () => {}; m.renderOrder = 1; return m; };
 { const b = blob(12.4, 3.4, 0.55); b.position.set(-0.45, 0.014, 0); truck.add(b); }
+// Blender-made tanker (blender/build_tanker.py): one body plus one wheel copied onto each wheel pivot, so rolling and
+// steering stay as they are. The code-built meshes are only hidden (hotspots still pick them); if the file fails they stay.
+new GLTFLoader().setDRACOLoader(new DRACOLoader().setDecoderPath("https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/libs/draco/gltf/")).load("tex/tanker.glb", (g) => {
+  const body = g.scene.getObjectByName("tanker_body"), wheel = g.scene.getObjectByName("tanker_wheel");
+  if (!body || !wheel) return;
+  for (const o of [body, wheel]) o.traverse((m) => { if (m.isMesh) m.castShadow = m.receiveShadow = true; });
+  for (const c of [...truck.children]) {
+    if (c.isGroup) { c.children.forEach((m) => (m.visible = false)); const w = wheel.clone(); if (c.position.z < 0) w.rotation.y = Math.PI; c.add(w); }
+    else if (c.isMesh && c.renderOrder !== 1) c.visible = false;   // keep the contact shadow
+  }
+  truck.add(body);
+  fadeList = null; // let the see-through check pick up the new meshes
+}, undefined, () => {});
 const PARK = V(4.15, 0, 0), WB = 7.45, TRUCK_X = [-8.6, 2.3], TRUCK_Z = 1.3; // rear-axle pivot at the bay, wheelbase, body outline around the pivot
 const drive = { on: false, v: 0, steer: 0, P: PARK.clone(), yaw: 0, hitAt: -9, fastAt: -9 };
 function truckHome() { return !drive.on && drive.P.distanceToSquared(PARK) < 1e-6 && Math.abs(drive.yaw) < 1e-6; }
@@ -1369,7 +1383,7 @@ function ik2(root, mid, target, L1, L2, bend, k) {
   root.rotation.x += (th + bend * a - root.rotation.x) * k; root.rotation.z += (ph - root.rotation.z) * k;
   mid.rotation.x += (-bend * b - mid.rotation.x) * k;
 }
-const RUNGS = [1.3, 1.6, 1.9, 2.2, 2.5, 2.8, 3.1, 3.4], LADDER_X = 5.97, LADDER_Z = -0.45;
+const RUNGS = [1.3, 1.6, 1.9, 2.2, 2.5, 2.8, 3.1, 3.4], LADDER_X = 6.23, LADDER_Z = -0.45;
 function poseDriver(dt) {
   const walking = !!((act && act.walk) || manualMoving);
   const climbing = walking && act && act.walk && Math.abs(act.walk.y - driver.position.y) > 0.05 && Math.abs(act.walk.y - driver.position.y) > Math.hypot(act.walk.x - driver.position.x, act.walk.z - driver.position.z) * 0.8;
@@ -1389,7 +1403,7 @@ function poseDriver(dt) {
     }
     legs.forEach((hip, i) => {
       const fy = footStep(i === 0 ? (ph ? 0 : 0.3) : (ph ? 0.3 : 0)), zz = LADDER_Z + (i === 0 ? -0.1 : 0.1);
-      const tgt = fy === null ? V(driver.position.x, 0, zz) : V(fy < 1 ? 6.3 : LADDER_X + 0.07, fy, zz);
+      const tgt = fy === null ? V(driver.position.x, 0, zz) : V(fy < 1 ? 6.42 : LADDER_X + 0.07, fy, zz);
       ik2(hip, knees[i], tgt, 0.44, 0.47, -1, k);
     });
   } else {
@@ -1436,7 +1450,7 @@ function poseDriver(dt) {
 // standing spots and the route up the rear ladder
 const S = {
   rod: V(-4.2, 0, -2.25), chock: V(2.6, 0, -2.05), plug: V(-0.62, 0, -2.05), lc: V(1.3, 0, -2.2), valves: V(-0.57, 0, -2.0),
-  rack: V(6.2, 0, -2.25), rear: V(6.75, 0, -2.25), ladderFoot: V(6.68, 0, -0.45), ladderMount: V(6.3, 0.93, -0.45), ladderTop: V(6.3, 3.0, -0.45), ladderExit: V(5.92, TOPY, -0.45),
+  rack: V(6.2, 0, -2.25), rear: V(6.75, 0, -2.25), ladderFoot: V(6.94, 0, -0.45), ladderMount: V(6.56, 0.93, -0.45), ladderTop: V(6.56, 3.0, -0.45), ladderExit: V(5.92, TOPY, -0.45),
   deck: V(5.4, TOPY, 0), topStand: V(0.7, TOPY, 0.05), band: V(-0.3, 0, -2.25), couplers: V(1.05, 0, -2.0), vapor: V(2.35, 0, -2.0),
 };
 // cables that lie across the lane once connected. The driver never steps over them:
@@ -1943,7 +1957,7 @@ const ITEMS = [
     if (!state.harnessOn) return { label: "안전벨트를 먼저 착용하세요", blocked: true };
     return { label: state.clipped ? "안전고리 해제" : "안전고리를 당겨 체결", run: () => doAct(HOOK_REST, () => A.clip(!state.clipped), { up: true }) };
   } },
-  { id: "ladder", meshes: () => ladderMeshes, pos: () => (state.onTop ? S.deck : V(5.96, 1.0, -0.45)), avail: () => {
+  { id: "ladder", meshes: () => ladderMeshes, pos: () => (state.onTop ? S.deck : V(6.22, 1.0, -0.45)), avail: () => {
     if (mode !== "top") return { label: "하부 출하: 유조차 위에 오르지 않습니다", blocked: true };
     if (state.onTop) return state.loading ? { label: "출하 중: 먼저 출하를 끝내세요", blocked: true } : { label: "사다리 내려가기", run: () => queue.push(...descendSeq().slice(0, 7)) };
     if (!state.harnessOn || !state.clipped) return { label: "안전벨트에 안전고리를 걸고 올라가세요", blocked: true };
