@@ -1642,11 +1642,11 @@ function setFp(on) {
   else camera.up.set(0, 1, 0);
 }
 function goView(name, instant = false) {
-  const wasFp = currentView === "fp";
+  const wasFp = currentView === "fp", wasFollow = currentView === "follow";
   currentView = name; pressView(name);
   if ((name === "fp") !== wasFp) setFp(name === "fp");
   if (name === "fp") { tween = null; return; }
-  if (name === "follow") { tween = null; if (instant || wasFp) followCam(1); return; }
+  if (name === "follow") { tween = null; if (!wasFollow) chase.yaw = null; if (instant || wasFp) followCam(1); return; }
   const v0 = MODES[mode].views[name], k = narrowK();
   const v = { target: v0.target, pos: v0.target.clone().add(v0.pos.clone().sub(v0.target).multiplyScalar(k)) };
   if (instant || reduceMotion || wasFp) { camera.position.copy(v.pos); controls.target.copy(v.target); tween = null; return; }
@@ -1683,8 +1683,7 @@ function manualCam(a, target, high) {
 function followCam(a) {
   const p = driver.position, high = p.y > 1;
   const target = p.clone().add(V(0, 1.05, 0));
-  if (!autoCam()) return manualCam(a, target, high);
-  chase.yaw = null;
+  if (!autoCam()) return manualCam(a, target, high); // after an action the view swings back to the walking direction it had
   const off = (high ? V(2.3, 0.85, -2.3) : p.x > 6.45 ? V(2.6, 1.6, -1.6) : V(-2.9, 1.6, -0.2)).multiplyScalar(narrowK() * camZoom);
   const turned = Math.abs(orbit.yaw) > 0.03 || Math.abs(orbit.pitch) > 0.03;
   if (turned) { // the user turned the view around the driver: same distance, new direction
