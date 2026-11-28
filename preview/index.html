@@ -298,7 +298,7 @@ body:not(.easy) > header h1::before { content: ""; width: 30px; height: 30px; bo
         <h3 id="infoTitle"></h3>
         <p id="infoBody"></p>
         <div class="spec" id="infoSpec"></div>
-        <p class="howto"><b>조작</b> W A S D 이동 (기사 따라가기에서는 W S 앞뒤 · A D 방향 전환) · Shift 달리기 · Space 점프 · 클릭 또는 E 설비 조작 · 드래그 시점 회전<span class="admin-only"> · 운전 중 W 가속 · S 제동/후진 · A D 조향 · E 하차</span></p>
+        <p class="howto"><b>조작</b> W A S D 이동 · Shift 달리기 · Space 점프 · 클릭 또는 E 설비 조작 · 드래그 시점 회전<span class="admin-only"> · 운전 중 W 가속 · S 제동/후진 · A D 조향 · E 하차</span></p>
         <div class="hold" id="hold"></div>
       </div>
       <div class="card logc">
@@ -1888,14 +1888,10 @@ function moveDriver(dt) {
   if (keys.has("KeyW") || keys.has("ArrowUp")) f += 1; if (keys.has("KeyS") || keys.has("ArrowDown")) f -= 1;
   if (keys.has("KeyD") || keys.has("ArrowRight")) s += 1; if (keys.has("KeyA") || keys.has("ArrowLeft")) s -= 1;
   if (!f && !s) return;
-  const own = currentView === "follow"; // behind the driver the view turns by itself, so W / S go by the driver's own facing and A / D turn him
-  if (own && s) driver.rotation.y -= s * 2.4 * dt;
-  if (own && !f) return;
-  const fwd = new THREE.Vector3();
-  if (own) fwd.set(Math.sin(driver.rotation.y), 0, Math.cos(driver.rotation.y)); else { camera.getWorldDirection(fwd); fwd.y = 0; fwd.normalize(); }
+  const fwd = new THREE.Vector3(); camera.getWorldDirection(fwd); fwd.y = 0; fwd.normalize();
   const right = new THREE.Vector3().crossVectors(fwd, V(0, 1, 0)).normalize();
-  const dir = own ? fwd.multiplyScalar(f) : fwd.multiplyScalar(f).add(right.multiplyScalar(s)).normalize();
-  const speed = (keys.has("ShiftLeft") || keys.has("ShiftRight") ? 3.2 : 1.8) * dt * (own && f < 0 ? 0.6 : 1); // stepping back is slower
+  const dir = fwd.multiplyScalar(f).add(right.multiplyScalar(s)).normalize();
+  const speed = (keys.has("ShiftLeft") || keys.has("ShiftRight") ? 3.2 : 1.8) * dt;
   const from = driver.position.clone();
   let moved = false, why = null;
   for (const cand of [dir, V(dir.x, 0, 0), V(0, 0, dir.z)]) {
@@ -1906,7 +1902,7 @@ function moveDriver(dt) {
     if (typeof ok === "string") why = ok;
   }
   if (why && !moved) toast(why);
-  if (currentView !== "fp" && !own) driver.rotation.y = Math.atan2(dir.x, dir.z);
+  if (currentView !== "fp") driver.rotation.y = Math.atan2(dir.x, dir.z);
   if (!moved) return;
   manualMoving = true; gait += driver.position.distanceTo(from) * 4.5; sfx.step(gait);
   if (currentView === "fp" || currentView === "follow") return; // follow stays follow while walking (the follow camera keeps up)
