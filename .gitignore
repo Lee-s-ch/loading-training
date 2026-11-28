@@ -8,3 +8,10 @@
 Thumbs.db
 .DS_Store
 desktop.ini
+
+# 블렌더 원본·중간 결과 (스크립트로 다시 만들 수 있음)
+blender/assets/
+blender/out/
+
+# 로컬 개발 설정
+.claude/
