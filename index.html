@@ -1652,9 +1652,39 @@ function goView(name, instant = false) {
   if (instant || reduceMotion || wasFp) { camera.position.copy(v.pos); controls.target.copy(v.target); tween = null; return; }
   tween = { from: camera.position.clone(), fromT: controls.target.clone(), to: v.pos, toT: v.target, t: 0 };
 }
+// walking by hand: the view keeps its own direction (turned only by a drag), so W stays "away from the camera" round corners;
+// it pulls in close where the truck, a column or island equipment would come between it and the driver
+const chase = { yaw: null };
+function camBlocked(q) {
+  if (POLES.some(([x, z]) => Math.hypot(q.x - x, q.z - z) < 0.3) && q.y < 6.6) return true; // canopy columns
+  if (q.z < -2.75 && q.y < 2.6 && POSTS.some(([x, z]) => Math.hypot(q.x - x, q.z - z) < 0.26)) return true; // island equipment (the driver keeps 0.3 away)
+  if (state.onTop || q.y > 3.8) return false;
+  const d = rotY(q.x - drive.P.x, q.z - drive.P.z, -drive.yaw);
+  return d.x > TRUCK_X[0] - 0.15 && d.x < TRUCK_X[1] + 0.15 && Math.abs(d.z) < TRUCK_Z + 0.25; // tanker body
+}
+function manualCam(a, target, high) {
+  const base = (high ? V(2.3, 0.85, -2.3) : V(-2.9, 1.6, -0.2)).multiplyScalar(narrowK() * camZoom), r = base.length();
+  if (chase.yaw === null) { // start from where the view is now (or behind the driver if it is far away)
+    const d = camera.position.clone().sub(target);
+    chase.yaw = (Math.hypot(d.x, d.z) > 0.3 && d.length() < r * 2 ? Math.atan2(d.x, d.z) : driver.rotation.y + Math.PI) - orbit.yaw;
+  }
+  const th = chase.yaw + orbit.yaw, ph0 = Math.max(0.3, Math.min(1.45, Math.acos(base.y / r) - orbit.pitch));
+  let dir = null, len = 0;
+  for (const ph of [ph0, Math.min(ph0, 0.8), 0.3]) { // something right behind the driver: look from higher up, same direction
+    const d = V(Math.sin(ph) * Math.sin(th), Math.cos(ph), Math.sin(ph) * Math.cos(th));
+    let l = r;
+    for (let t = 0.35; t <= r + 0.3; t += 0.1) if (camBlocked(target.clone().addScaledVector(d, t))) { l = Math.min(r, Math.max(0.5, t - 0.3)); break; }
+    if (l > len + 0.05) { dir = d; len = l; }
+    if (len > r * 0.6) break;
+  }
+  const pos = target.clone().addScaledVector(dir, len); pos.y = Math.max(0.25, pos.y);
+  controls.target.lerp(target, a); camera.position.lerp(pos, Math.max(a, len < r ? 0.5 : 0)); // pull in at once, ease back out
+}
 function followCam(a) {
   const p = driver.position, high = p.y > 1;
   const target = p.clone().add(V(0, 1.05, 0));
+  if (!autoCam()) return manualCam(a, target, high);
+  chase.yaw = null;
   const off = (high ? V(2.3, 0.85, -2.3) : p.x > 6.45 ? V(2.6, 1.6, -1.6) : V(-2.9, 1.6, -0.2)).multiplyScalar(narrowK() * camZoom);
   const turned = Math.abs(orbit.yaw) > 0.03 || Math.abs(orbit.pitch) > 0.03;
   if (turned) { // the user turned the view around the driver: same distance, new direction
@@ -1734,7 +1764,7 @@ ui.modes.forEach((r) => r.addEventListener("change", () => {
   log(`출하 방식: ${r.value === "top" ? "상부 출하 (등유·경유)" : "하부 출하 (휘발유)"} · 작업 대기`);
   goView(currentView === "free" ? homeView() : currentView, true); render();
 }));
-const resetCam = () => { orbit.yaw = 0; orbit.pitch = 0; camZoom = 1; };
+const resetCam = () => { orbit.yaw = 0; orbit.pitch = 0; camZoom = 1; chase.yaw = null; };
 $("reset").addEventListener("click", () => { resetCam(); resetScene(mode); log("처음 상태로: 작업 대기"); goView(currentView === "fp" ? "fp" : homeView()); render(); });
 
 // ---------- screens and the sign ----------
@@ -2704,6 +2734,7 @@ function frame(nowMs) {
       controls.target.lerpVectors(tween.fromT, tween.toT, e);
       if (tween.t >= 1) tween = null;
     } else if (currentView === "follow") (drive.on ? chaseCam : followCam)(reduceMotion ? 1 : 1 - Math.exp(-dt * 3));
+    controls.minDistance = currentView === "follow" ? 0.3 : 1.2; // behind a column the follow view comes in closer than the free view may
     controls.update();
   }
   if (state.loading && !state.paused && flowCurve) {
