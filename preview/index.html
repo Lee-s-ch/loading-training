@@ -974,31 +974,79 @@ for (const x of [-0.07, 0.07]) for (const z of [0.142, -0.142]) hide(box(0.045, 
 for (const x of [-0.1, 0.1]) { mesh(new THREE.CylinderGeometry(0.088, 0.085, 0.04, 20, 1, true), mat.harness, V(x, 0.8, 0), harness); }
 const dRing = mesh(new THREE.TorusGeometry(0.04, 0.01, 8, 20), mat.steel, V(0, 1.38, -0.155), harness);
 
-// ---------- Blender driver (tex/driver_body.glb, blender/build_driver.py) ----------
-// One node per body segment, its origin on the matching joint above, so the joints keep moving it.
-// The hand-built meshes stay (hidden) as the fallback if the file does not load.
-const drvCode = []; rig.traverse((o) => o.isMesh && drvCode.push(o));
-const gearLoops = [];
-new GLTFLoader().setDRACOLoader(new DRACOLoader().setDecoderPath("https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/libs/draco/gltf/")).load("tex/driver_body.glb", (g) => {
-  const n = (k) => g.scene.getObjectByName(k);
-  if (!n("drv_torso")) return;
+// ---------- MPFB worker (tex/worker.glb, blender/build_worker.py) ----------
+const driverMeshes = [];
+rig.traverse((o) => { if (o.isMesh) driverMeshes.push(o); });
+const harnessParts = [];
+let updateWorkerBones = null;
+new GLTFLoader().setDRACOLoader(new DRACOLoader().setDecoderPath("https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/libs/draco/gltf/")).load("tex/worker.glb", ({ scene: worker }) => {
+  const bones = new Map();
+  worker.traverse((o) => {
+    if (o.isBone) bones.set(o.name.replace(/^mixamorig:?/, ""), o);
+    if (o.isSkinnedMesh) {
+      o.frustumCulled = false;
+      o.castShadow = o.receiveShadow = true;
+    }
+  });
+  const gear = ["gear_harness", "gear_legloop_L", "gear_legloop_R"].map((name) => worker.getObjectByName(name));
   const ankle = (i) => knees[i].children.find((c) => c.isGroup);
-  const at = { drv_pelvis: rig, drv_torso: rig, drv_neck: rig, gear_vest: rig, drv_head: headG, gear_harness: harness,
-    drv_thigh_R: legs[0], drv_shin_R: knees[0], drv_boot_R: ankle(0), gear_legloop_R: legs[0],
-    drv_thigh_L: legs[1], drv_shin_L: knees[1], drv_boot_L: ankle(1), gear_legloop_L: legs[1],
-    drv_uparm_L: arms.L.sh, drv_forearm_L: arms.L.el, drv_uparm_R: arms.R.sh, drv_forearm_R: arms.R.el };
-  const part = Object.fromEntries(Object.keys(at).map((k) => [k, n(k)])); // look up before reparenting moves them out of g.scene
-  const nodes = Object.keys(at).map((k) => [part[k], at[k]]);
-  if (nodes.some(([o, j]) => !o || !j)) return;
-  for (const [o, j] of nodes) {
-    j.add(o); o.position.set(0, 0, 0); o.quaternion.identity();
-    o.traverse((m) => { if (m.isMesh) { m.castShadow = true; m.receiveShadow = true; } });
+  const joints = [
+    ["RightUpLeg", legs[0]], ["RightLeg", knees[0]], ["RightFoot", ankle(0)],
+    ["LeftUpLeg", legs[1]], ["LeftLeg", knees[1]], ["LeftFoot", ankle(1)],
+    ["RightArm", arms.R.sh], ["RightForeArm", arms.R.el, 0.45],
+    ["LeftArm", arms.L.sh], ["LeftForeArm", arms.L.el, -0.45], ["Head", headG]
+  ];
+  if (gear.some((o) => !o) || joints.some(([name, joint]) => !bones.has(name) || !joint)) {
+    console.warn("tex/worker.glb is missing driver bones or harness parts");
+    return;
   }
-  drvCode.forEach((m) => { m.visible = false; const i = headParts.indexOf(m); if (i >= 0) headParts.splice(i, 1); });
-  for (const k of ["drv_pelvis", "drv_torso", "drv_neck", "gear_vest", "gear_harness"]) headParts.push(part[k]); // hidden in first person, like the old torso
-  gearLoops.push(part.gear_legloop_L, part.gear_legloop_R);
-  for (const o of gearLoops) o.visible = harness.visible;
-}, undefined, (e) => console.warn("tex/driver_body.glb:", e));
+
+  // The unattached scene is already in rig space. Limb bones are aimed along the hand-built segments
+  // (hip -> knee -> ankle, shoulder -> elbow -> hand), so knees and elbows land where the rig puts them
+  // even though the body's rest limbs do not hang exactly like the rig's. Feet and head copy the joint's turn.
+  const AIM = { RightUpLeg: () => knees[0], RightLeg: () => ankle(0), LeftUpLeg: () => knees[1], LeftLeg: () => ankle(1),
+    RightArm: () => arms.R.el, RightForeArm: () => arms.R.tip, LeftArm: () => arms.L.el, LeftForeArm: () => arms.L.tip };
+  const CHILD = { RightUpLeg: "RightLeg", RightLeg: "RightFoot", LeftUpLeg: "LeftLeg", LeftLeg: "LeftFoot",
+    RightArm: "RightForeArm", RightForeArm: "RightHand", LeftArm: "LeftForeArm", LeftForeArm: "LeftHand" };
+  const up = new THREE.Vector3(0, 1, 0);
+  worker.updateMatrixWorld(true);
+  const mapped = joints.map(([name, joint, yaw = 0]) => {
+    const bone = bones.get(name);
+    const rest = bone.getWorldQuaternion(new THREE.Quaternion());
+    const out = { joint, bone, rest, aim: AIM[name] && AIM[name]() };
+    if (out.aim) out.dir = bones.get(CHILD[name]).getWorldPosition(new THREE.Vector3()).sub(bone.getWorldPosition(new THREE.Vector3())).normalize();
+    else out.offset = new THREE.Quaternion().setFromAxisAngle(up, -yaw).multiply(rest);
+    return out;
+  });
+  worker.position.y -= 0.001; // exported boot soles are 1 mm above the rig origin
+  rig.add(worker);
+  const head = bones.get("Head");
+  const target = new THREE.Quaternion(), parent = new THREE.Quaternion(), rigQ = new THREE.Quaternion(), swing = new THREE.Quaternion();
+  const pa = new THREE.Vector3(), pb = new THREE.Vector3();
+  updateWorkerBones = () => {
+    // Work in rig space; parent-first order lets each child see its parent's newly posed orientation.
+    rig.getWorldQuaternion(rigQ).invert();
+    for (const m of mapped) {
+      if (m.aim) {
+        m.joint.getWorldPosition(pa); m.aim.getWorldPosition(pb);
+        pb.sub(pa).applyQuaternion(rigQ).normalize();
+        target.copy(swing.setFromUnitVectors(m.dir, pb)).multiply(m.rest);
+      } else target.copy(rigQ).multiply(m.joint.getWorldQuaternion(parent)).multiply(m.offset);
+      m.bone.parent.getWorldQuaternion(parent).premultiply(rigQ);
+      m.bone.quaternion.copy(parent.invert().multiply(target));
+      m.bone.updateMatrixWorld(true);
+    }
+    head.scale.setScalar(currentView === "fp" ? 0.001 : 1);
+  };
+  updateWorkerBones();
+  for (const mesh of driverMeshes) {
+    mesh.visible = false;
+    const i = headParts.indexOf(mesh);
+    if (i >= 0) headParts.splice(i, 1);
+  }
+  harnessParts.push(...gear);
+  for (const part of harnessParts) part.visible = state.harnessOn;
+}, undefined, (e) => console.warn("tex/worker.glb:", e));
 
 // ---------- Mixamo motion for the hand-built driver ----------
 // tex/driver.glb holds an invisible Mixamo skeleton (X Bot) and its motion clips. The driver above keeps its look:
@@ -1919,7 +1967,7 @@ function render() {
   lampSet(gLamp, vOK, 0x3fb07f);
   lampSet(ulcLamp, bOK, 0x3fb07f);
   valveHandle.rotation.z = state.valves ? Math.PI / 2 : 0;
-  harness.visible = state.harnessOn; rackHarness.visible = !state.harnessOn; gearLoops.forEach((o) => (o.visible = state.harnessOn));
+  harness.visible = state.harnessOn; rackHarness.visible = !state.harnessOn; harnessParts.forEach((o) => (o.visible = state.harnessOn));
   flow.forEach((p) => (p.visible = state.loading && !state.paused));
   screensDirty = true;
 }
@@ -2787,6 +2835,7 @@ function frame(nowMs) {
     const s = 1 + 0.25 * pulse; ringA.scale.setScalar(s); ringB.scale.setScalar(s);
   }
   if (state.alarm) lampSet(ulcLamp, Math.floor(nowMs / 400) % 2 === 0, 0xe0603a);
+  updateWorkerBones?.();
   updateFade();
   if (hq && composer && !fxLive) composer.render(); else renderer.render(scene, camera); // vapour and flames are drawn the plain way so they keep their colour
   if (currentView !== "fp" && !drive.on) {

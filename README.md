@@ -13,8 +13,8 @@
 | `app.js` | 로그인, 교육·시험 진행, 관리자 화면 |
 | `questions.js` | 단계별 설명과 시험 오답·이유 (검토 후 수정) |
 | `app.css` | 화면 스타일 |
-| `tex/` | 하늘·콘크리트 등 텍스처 (Poly Haven, CC0), 기사 동작 `driver.glb` (Adobe Mixamo 뼈대·동작, Mixamo 이용 조건에 따라 사용), 유조차 `tanker.glb` (자체 제작, `blender/build_tanker.py`로 생성), 출하대 `bay.glb` (`build_bay.py`), 기사 몸·조끼·안전대 `driver_body.glb` (`build_driver.py`, 관절마다 조각 하나씩, 기존 관절에 붙여 움직임) |
-| `blender/` | 3D 모델을 만드는 블렌더 스크립트. 블렌더 5.3에서 `blender -b -P blender/build_tanker.py -- --export tex/tanker.glb`로 다시 만든다. 조명용 HDRI는 Poly Haven `overcast_industrial_courtyard`(CC0)를 `blender/assets/`에 받아 쓴다(git 제외) |
+| `tex/` | 하늘·콘크리트 등 텍스처 (Poly Haven, CC0), 기사 동작 `driver.glb` (Adobe Mixamo 뼈대·동작, Mixamo 이용 조건에 따라 사용), 유조차 `tanker.glb` (자체 제작, `blender/build_tanker.py`로 생성), 출하대 `bay.glb` (`build_bay.py`), 기사 `worker.glb` (`build_worker.py`: 블렌더 확장 MPFB로 만든 사람 몸에 MakeHuman 시스템 에셋(CC0)의 피부·눈·머리·작업복을 입히고, 조끼·안전대·헬멧·안전화는 자체 제작. 하나로 이어진 몸을 Mixamo 뼈대로 움직이고, 뼈대는 페이지의 관절을 따라감) |
+| `blender/` | 3D 모델을 만드는 블렌더 스크립트. 블렌더 5.3에서 `blender -b -P blender/build_tanker.py -- --export tex/tanker.glb`로 다시 만든다. 조명용 HDRI는 Poly Haven `overcast_industrial_courtyard`(CC0)를 `blender/assets/`에 받아 쓴다(git 제외). 기사(`build_worker.py`)는 블렌더 확장 MPFB와 MakeHuman 시스템 에셋 팩(`makehuman_system_assets_cc0.zip`, MPFB에 설치)이 필요하다 |
 
 회원 정보와 기록은 Supabase(서울 리전) 데이터베이스에 저장됩니다. 테이블은 외부에서 직접 읽을 수 없고, 모든 동작은 세션과 권한을 검사하는 함수로만 처리합니다. 페이지에 들어 있는 키는 공개용(publishable) 키입니다.
 
