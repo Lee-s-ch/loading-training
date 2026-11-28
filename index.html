@@ -1884,7 +1884,6 @@ function walkable(p, from) {
   if (b) return `${b.name}을 밟지 않도록 돌아가거나 분리한 뒤 지나가세요`;
   return true;
 }
-let moveBasis = null;
 function moveDriver(dt) {
   manualMoving = false;
   if (drive.on) return;
@@ -1892,9 +1891,8 @@ function moveDriver(dt) {
   let f = 0, s = 0;
   if (keys.has("KeyW") || keys.has("ArrowUp")) f += 1; if (keys.has("KeyS") || keys.has("ArrowDown")) f -= 1;
   if (keys.has("KeyD") || keys.has("ArrowRight")) s += 1; if (keys.has("KeyA") || keys.has("ArrowLeft")) s -= 1;
-  if (!f && !s) { moveBasis = null; return; }
+  if (!f && !s) return;
   const fwd = new THREE.Vector3(); camera.getWorldDirection(fwd); fwd.y = 0; fwd.normalize();
-  if (currentView === "follow") { if (moveBasis) fwd.copy(moveBasis); else moveBasis = fwd.clone(); } // while the keys stay down, "forward" stays what it was when they were pressed, though the view turns
   const right = new THREE.Vector3().crossVectors(fwd, V(0, 1, 0)).normalize();
   const dir = fwd.multiplyScalar(f).add(right.multiplyScalar(s)).normalize();
   const speed = (keys.has("ShiftLeft") || keys.has("ShiftRight") ? 3.2 : 1.8) * dt;
