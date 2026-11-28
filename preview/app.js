@@ -402,10 +402,11 @@ function renderTab() {
   const body = $a("#tabBody");
   if (tab === "stats") return renderStats(body);
   if (tab === "passed") {
-    const list = drivers.filter((d) => d.passed_at).sort((a, b) => a.passed_at.localeCompare(b.passed_at));
+    const last = (d) => d.last_passed_at || d.passed_at; // most recent pass first, so a re-take shows at the top
+    const list = drivers.filter((d) => d.passed_at).sort((a, b) => last(b).localeCompare(last(a)));
     body.innerHTML = `<div class="bar"><span>합격자 ${list.length}명</span><span class="grow"></span>
       <button class="btn" id="xls" type="button" ${list.length ? "" : "disabled"}>엑셀로 받기</button><button class="btn" id="pdf" type="button" ${list.length ? "" : "disabled"}>PDF로 받기</button></div>
-      ${list.length ? table(list, ["plate", "name", "company", "fuel", "best", "passed_at"]) : '<p class="lead">아직 합격자가 없습니다.</p>'}`;
+      ${list.length ? table(list, ["plate", "name", "company", "fuel", "best", "last_passed_at", "passed_at"]) : '<p class="lead">아직 합격자가 없습니다.</p>'}`;
     body.querySelector("#xls").onclick = () => exportXlsx(list);
     body.querySelector("#pdf").onclick = () => exportPdf(list);
     return;
@@ -417,13 +418,14 @@ function renderTab() {
     try { await rpc("admin_set_fuel", { p_token: token, p_driver: s.dataset.fuel, p_fuel: s.value }); msg("유종을 바꿨습니다. 다음 교육부터 바뀐 과정으로 들어갑니다.", true); await loadDrivers(); } catch (e) { msg(errText(e)); }
   }));
 }
-const COLS = { plate: "차량번호", name: "성명", company: "소속", fuel: "유종", status: "상태", trainings: "교육", best: "최고점", passed_at: "합격일", actions: "" };
+const COLS = { plate: "차량번호", name: "성명", company: "소속", fuel: "유종", status: "상태", trainings: "교육", best: "최고점", passed_at: "첫 합격일", last_passed_at: "최근 합격일", actions: "" };
 const STATUS = { pending: '<span class="pill">대기</span>', approved: '<span class="pill pass">승인</span>', rejected: '<span class="pill fail">반려</span>' };
 function cell(d, c) {
   if (c === "fuel") return `<select data-fuel="${d.id}" aria-label="${esc(d.plate)} 유종">${["등유", "경유", "휘발유"].map((f) => `<option ${f === d.fuel ? "selected" : ""}>${f}</option>`).join("")}</select>`;
   if (c === "status") return STATUS[d.status] || esc(d.status);
   if (c === "best") return d.best == null ? "-" : `<span class="num">${d.best}</span>`;
   if (c === "passed_at") return d.passed_at ? esc(day(d.passed_at)) : "-";
+  if (c === "last_passed_at") { const v = d.last_passed_at || d.passed_at; return v ? esc(day(v)) : "-"; }
   if (c === "trainings") return `<span class="num">${d.trainings}</span>`;
   if (c === "actions") return `<div class="acts">${d.status !== "approved" ? `<button class="btn ok" data-act="approve" data-id="${d.id}" type="button">승인</button>` : ""}${d.status === "pending" ? `<button class="btn" data-act="reject" data-id="${d.id}" type="button">반려</button>` : ""}
     <button class="btn" data-act="history" data-id="${d.id}" type="button">기록</button><button class="btn" data-act="pw" data-id="${d.id}" type="button">비밀번호 초기화</button><button class="btn danger" data-act="del" data-id="${d.id}" type="button">삭제</button></div>`;
@@ -453,7 +455,7 @@ async function act(kind, id, btn) {
   } catch (e) { msg(errText(e)); }
 }
 const stamp = () => new Date().toLocaleDateString("sv-SE", { timeZone: "Asia/Seoul" }).replaceAll("-", "");
-const passRows = (list) => list.map((d, i) => ({ 번호: i + 1, 차량번호: d.plate, 성명: d.name, 소속: d.company, 유종: d.fuel, 최고점: d.best, 합격일: day(d.passed_at) }));
+const passRows = (list) => list.map((d, i) => ({ 번호: i + 1, 차량번호: d.plate, 성명: d.name, 소속: d.company, 유종: d.fuel, 최고점: d.best, 첫합격일: day(d.passed_at), 최근합격일: day(d.last_passed_at || d.passed_at) }));
 async function exportXlsx(list) {
   try {
     const X = await lib(XLSX_LIB, "XLSX"); const ws = X.utils.json_to_sheet(passRows(list));
@@ -465,7 +467,7 @@ async function exportPdf(list) { // Korean text is drawn on a canvas (system fon
   try {
     const { jsPDF } = await lib(PDF_LIB, "jspdf"); await document.fonts?.load?.('700 20px "Noto Sans KR"');
     const rows = passRows(list), per = 28, W = 1240, H = 1754, doc = new jsPDF({ unit: "mm", format: "a4" });
-    const cols = [["번호", 70], ["차량번호", 190], ["성명", 150], ["소속", 300], ["유종", 110], ["최고점", 110], ["합격일", 190]];
+    const cols = [["번호", 60], ["차량번호", 170], ["성명", 130], ["소속", 200], ["유종", 90], ["최고점", 90], ["첫합격일", 170], ["최근합격일", 170]]; // fits the A4 width (1080 px)
     for (let p = 0; p * per < rows.length; p++) {
       const c = document.createElement("canvas"); c.width = W; c.height = H; const g = c.getContext("2d");
       g.fillStyle = "#fff"; g.fillRect(0, 0, W, H); g.fillStyle = "#14201b"; g.textBaseline = "middle";
