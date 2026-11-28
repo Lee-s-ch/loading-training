@@ -298,7 +298,7 @@ body:not(.easy) > header h1::before { content: ""; width: 30px; height: 30px; bo
         <h3 id="infoTitle"></h3>
         <p id="infoBody"></p>
         <div class="spec" id="infoSpec"></div>
-        <p class="howto"><b>조작</b> W A S D 이동 · Shift 달리기 · Space 점프 · 클릭 또는 E 설비 조작 · 드래그 시점 회전<span class="admin-only"> · 운전 중 W 가속 · S 제동/후진 · A D 조향 · E 하차</span></p>
+        <p class="howto"><b>조작</b> W A S D 이동 (기사 따라가기에서는 W S 앞뒤 · A D 방향 전환) · Shift 달리기 · Space 점프 · 클릭 또는 E 설비 조작 · 드래그 시점 회전<span class="admin-only"> · 운전 중 W 가속 · S 제동/후진 · A D 조향 · E 하차</span></p>
         <div class="hold" id="hold"></div>
       </div>
       <div class="card logc">
@@ -1656,48 +1656,19 @@ function setFp(on) {
   else camera.up.set(0, 1, 0);
 }
 function goView(name, instant = false) {
-  const wasFp = currentView === "fp", wasFollow = currentView === "follow";
+  const wasFp = currentView === "fp";
   currentView = name; pressView(name);
   if ((name === "fp") !== wasFp) setFp(name === "fp");
   if (name === "fp") { tween = null; return; }
-  if (name === "follow") { tween = null; if (!wasFollow) chase.yaw = null; if (instant || wasFp) followCam(1); return; }
+  if (name === "follow") { tween = null; if (instant || wasFp) followCam(1); return; }
   const v0 = MODES[mode].views[name], k = narrowK();
   const v = { target: v0.target, pos: v0.target.clone().add(v0.pos.clone().sub(v0.target).multiplyScalar(k)) };
   if (instant || reduceMotion || wasFp) { camera.position.copy(v.pos); controls.target.copy(v.target); tween = null; return; }
   tween = { from: camera.position.clone(), fromT: controls.target.clone(), to: v.pos, toT: v.target, t: 0 };
 }
-// walking by hand: the view keeps its own direction (turned only by a drag), so W stays "away from the camera" round corners;
-// it pulls in close where the truck, a column or island equipment would come between it and the driver
-const chase = { yaw: null };
-function camBlocked(q) {
-  if (POLES.some(([x, z]) => Math.hypot(q.x - x, q.z - z) < 0.3) && q.y < 6.6) return true; // canopy columns
-  if (q.z < -2.75 && q.y < 2.6 && POSTS.some(([x, z]) => Math.hypot(q.x - x, q.z - z) < 0.26)) return true; // island equipment (the driver keeps 0.3 away)
-  if (state.onTop || q.y > 3.8) return false;
-  const d = rotY(q.x - drive.P.x, q.z - drive.P.z, -drive.yaw);
-  return d.x > TRUCK_X[0] - 0.15 && d.x < TRUCK_X[1] + 0.15 && Math.abs(d.z) < TRUCK_Z + 0.25; // tanker body
-}
-function manualCam(a, target, high) {
-  const base = (high ? V(2.3, 0.85, -2.3) : V(-2.9, 1.6, -0.2)).multiplyScalar(narrowK() * camZoom), r = base.length();
-  if (chase.yaw === null) { // start from where the view is now (or behind the driver if it is far away)
-    const d = camera.position.clone().sub(target);
-    chase.yaw = (Math.hypot(d.x, d.z) > 0.3 && d.length() < r * 2 ? Math.atan2(d.x, d.z) : driver.rotation.y + Math.PI) - orbit.yaw;
-  }
-  const th = chase.yaw + orbit.yaw, ph0 = Math.max(0.3, Math.min(1.45, Math.acos(base.y / r) - orbit.pitch));
-  let dir = null, len = 0;
-  for (const ph of [ph0, Math.min(ph0, 0.8), 0.3]) { // something right behind the driver: look from higher up, same direction
-    const d = V(Math.sin(ph) * Math.sin(th), Math.cos(ph), Math.sin(ph) * Math.cos(th));
-    let l = r;
-    for (let t = 0.35; t <= r + 0.3; t += 0.1) if (camBlocked(target.clone().addScaledVector(d, t))) { l = Math.min(r, Math.max(0.5, t - 0.3)); break; }
-    if (l > len + 0.05) { dir = d; len = l; }
-    if (len > r * 0.6) break;
-  }
-  const pos = target.clone().addScaledVector(dir, len); pos.y = Math.max(0.25, pos.y);
-  controls.target.lerp(target, a); camera.position.lerp(pos, Math.max(a, len < r ? 0.5 : 0)); // pull in at once, ease back out
-}
 function followCam(a) {
   const p = driver.position, high = p.y > 1;
   const target = p.clone().add(V(0, 1.05, 0));
-  if (!autoCam()) return manualCam(a, target, high); // after an action the view swings back to the walking direction it had
   const off = (high ? V(2.3, 0.85, -2.3) : p.x > 6.45 ? V(2.6, 1.6, -1.6) : V(-2.9, 1.6, -0.2)).multiplyScalar(narrowK() * camZoom);
   const turned = Math.abs(orbit.yaw) > 0.03 || Math.abs(orbit.pitch) > 0.03;
   if (turned) { // the user turned the view around the driver: same distance, new direction
@@ -1777,7 +1748,7 @@ ui.modes.forEach((r) => r.addEventListener("change", () => {
   log(`출하 방식: ${r.value === "top" ? "상부 출하 (등유·경유)" : "하부 출하 (휘발유)"} · 작업 대기`);
   goView(currentView === "free" ? homeView() : currentView, true); render();
 }));
-const resetCam = () => { orbit.yaw = 0; orbit.pitch = 0; camZoom = 1; chase.yaw = null; };
+const resetCam = () => { orbit.yaw = 0; orbit.pitch = 0; camZoom = 1; };
 $("reset").addEventListener("click", () => { resetCam(); resetScene(mode); log("처음 상태로: 작업 대기"); goView(currentView === "fp" ? "fp" : homeView()); render(); });
 
 // ---------- screens and the sign ----------
@@ -1917,10 +1888,14 @@ function moveDriver(dt) {
   if (keys.has("KeyW") || keys.has("ArrowUp")) f += 1; if (keys.has("KeyS") || keys.has("ArrowDown")) f -= 1;
   if (keys.has("KeyD") || keys.has("ArrowRight")) s += 1; if (keys.has("KeyA") || keys.has("ArrowLeft")) s -= 1;
   if (!f && !s) return;
-  const fwd = new THREE.Vector3(); camera.getWorldDirection(fwd); fwd.y = 0; fwd.normalize();
+  const own = currentView === "follow"; // behind the driver the view turns by itself, so W / S go by the driver's own facing and A / D turn him
+  if (own && s) driver.rotation.y -= s * 2.4 * dt;
+  if (own && !f) return;
+  const fwd = new THREE.Vector3();
+  if (own) fwd.set(Math.sin(driver.rotation.y), 0, Math.cos(driver.rotation.y)); else { camera.getWorldDirection(fwd); fwd.y = 0; fwd.normalize(); }
   const right = new THREE.Vector3().crossVectors(fwd, V(0, 1, 0)).normalize();
-  const dir = fwd.multiplyScalar(f).add(right.multiplyScalar(s)).normalize();
-  const speed = (keys.has("ShiftLeft") || keys.has("ShiftRight") ? 3.2 : 1.8) * dt;
+  const dir = own ? fwd.multiplyScalar(f) : fwd.multiplyScalar(f).add(right.multiplyScalar(s)).normalize();
+  const speed = (keys.has("ShiftLeft") || keys.has("ShiftRight") ? 3.2 : 1.8) * dt * (own && f < 0 ? 0.6 : 1); // stepping back is slower
   const from = driver.position.clone();
   let moved = false, why = null;
   for (const cand of [dir, V(dir.x, 0, 0), V(0, 0, dir.z)]) {
@@ -1931,7 +1906,7 @@ function moveDriver(dt) {
     if (typeof ok === "string") why = ok;
   }
   if (why && !moved) toast(why);
-  if (currentView !== "fp") driver.rotation.y = Math.atan2(dir.x, dir.z);
+  if (currentView !== "fp" && !own) driver.rotation.y = Math.atan2(dir.x, dir.z);
   if (!moved) return;
   manualMoving = true; gait += driver.position.distanceTo(from) * 4.5; sfx.step(gait);
   if (currentView === "fp" || currentView === "follow") return; // follow stays follow while walking (the follow camera keeps up)
@@ -2747,7 +2722,6 @@ function frame(nowMs) {
       controls.target.lerpVectors(tween.fromT, tween.toT, e);
       if (tween.t >= 1) tween = null;
     } else if (currentView === "follow") (drive.on ? chaseCam : followCam)(reduceMotion ? 1 : 1 - Math.exp(-dt * 3));
-    controls.minDistance = currentView === "follow" ? 0.3 : 1.2; // behind a column the follow view comes in closer than the free view may
     controls.update();
   }
   if (state.loading && !state.paused && flowCurve) {
