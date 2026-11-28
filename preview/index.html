@@ -624,7 +624,7 @@ const roofMat = M(0x8e959a, { metalness: 0.45, roughness: 0.5 }), lampMat = M(0x
 const greyBox = M(0x9aa7a8, { metalness: 0.35, roughness: 0.55 });
 function numberBoard(n, z) {
   const t = canvasTex(128, 160), g = t.g; g.fillStyle = "#f4f4f0"; g.fillRect(0, 0, 128, 160); g.strokeStyle = "#1f2522"; g.lineWidth = 4; g.strokeRect(2, 2, 124, 156);
-  text(g, "HD", 64, 30, 30, "#1f2522"); text(g, String(n), 64, 92, 70, "#1f2522"); g.fillStyle = "#2a6fb0"; g.fillRect(10, 132, 108, 18); t.t.needsUpdate = true;
+  text(g, String(n), 64, 70, 84, "#1f2522");   // bay number only, no company mark g.fillStyle = "#2a6fb0"; g.fillRect(10, 132, 108, 18); t.t.needsUpdate = true;
   const p = new THREE.Mesh(new THREE.PlaneGeometry(0.42, 0.52), new THREE.MeshStandardMaterial({ map: t.t, roughness: 0.6 })); p.position.set(5.76, 3.7, z); p.rotation.y = Math.PI / 2; scene.add(p);
 }
 numberBoard(42, -3.3);
@@ -1656,11 +1656,11 @@ function setFp(on) {
   else camera.up.set(0, 1, 0);
 }
 function goView(name, instant = false) {
-  const wasFp = currentView === "fp";
+  const wasFp = currentView === "fp", wasFollow = currentView === "follow";
   currentView = name; pressView(name);
   if ((name === "fp") !== wasFp) setFp(name === "fp");
   if (name === "fp") { tween = null; return; }
-  if (name === "follow") { tween = null; if (instant || wasFp) followCam(1); return; }
+  if (name === "follow") { tween = null; if (!wasFollow) chase.yaw = null; if (instant || wasFp) followCam(1); return; }
   const v0 = MODES[mode].views[name], k = narrowK();
   const v = { target: v0.target, pos: v0.target.clone().add(v0.pos.clone().sub(v0.target).multiplyScalar(k)) };
   if (instant || reduceMotion || wasFp) { camera.position.copy(v.pos); controls.target.copy(v.target); tween = null; return; }
@@ -1697,8 +1697,7 @@ function manualCam(a, target, high) {
 function followCam(a) {
   const p = driver.position, high = p.y > 1;
   const target = p.clone().add(V(0, 1.05, 0));
-  if (!autoCam()) return manualCam(a, target, high);
-  chase.yaw = null;
+  if (!autoCam()) return manualCam(a, target, high); // after an action the view swings back to the walking direction it had
   const off = (high ? V(2.3, 0.85, -2.3) : p.x > 6.45 ? V(2.6, 1.6, -1.6) : V(-2.9, 1.6, -0.2)).multiplyScalar(narrowK() * camZoom);
   const turned = Math.abs(orbit.yaw) > 0.03 || Math.abs(orbit.pitch) > 0.03;
   if (turned) { // the user turned the view around the driver: same distance, new direction
