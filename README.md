@@ -17,7 +17,7 @@
 
 회원 정보와 기록은 Supabase(서울 리전) 데이터베이스에 저장됩니다. 테이블은 외부에서 직접 읽을 수 없고, 모든 동작은 세션과 권한을 검사하는 함수로만 처리합니다. 페이지에 들어 있는 키는 공개용(publishable) 키입니다.
 
-테이블: `drivers`(회원), `sessions`(로그인), `attempts`(교육·시험 기록), `settings`(사이트 설정 — 현재 `auto_approve` 하나). `settings`는 `admin_settings`·`admin_set_auto_approve`(관리자 전용) 함수로만 읽고 바꾸며, `signup`은 `auto_approve`가 켜져 있으면 바로 승인 상태로 가입시킵니다. 관리자 기사 목록(`admin_drivers`)은 첫 합격일(`passed_at`)과 최근 합격일(`last_passed_at`)을 함께 돌려주고, 합격자 명단은 최근 합격순으로 보여 줍니다.
+테이블: `drivers`(회원), `sessions`(로그인), `attempts`(교육·시험 기록), `settings`(사이트 설정 — 현재 `auto_approve` 하나). `settings`는 `admin_settings`·`admin_set_auto_approve`(관리자 전용) 함수로만 읽고 바꾸며, `signup`은 `auto_approve`가 켜져 있으면 바로 승인 상태로 가입시킵니다. 관리자 기사 목록(`admin_drivers`)은 첫 합격일(`passed_at`)과 최근 합격일(`last_passed_at`)을 함께 돌려주고, 합격자 명단은 최근 합격순으로, 합격일 칸에 최근 합격일과 지난 일수(예: `2026. 11. 27. / 1일`)를 보여 줍니다.
 
 ## 운영 전 확인할 것
 
