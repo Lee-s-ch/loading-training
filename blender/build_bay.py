@@ -29,6 +29,10 @@ def node_mat(name, color, rough=0.6, metal=0.0, maps=None, alpha_img=None):
     bsdf.inputs["Base Color"].default_value = srgb(color)
     bsdf.inputs["Roughness"].default_value = rough
     bsdf.inputs["Metallic"].default_value = metal
+    if "Anisotropic IOR Level" in bsdf.inputs:
+        bsdf.inputs["Anisotropic IOR Level"].default_value = 0.0
+    elif "Anisotropic" in bsdf.inputs:
+        bsdf.inputs["Anisotropic"].default_value = 0.0
     if maps:
         for key, (fn, scale) in maps.items():
             p = os.path.join(TEX, fn)
@@ -205,6 +209,58 @@ for o in COL.objects:
         bpy.ops.object.mode_set(mode="EDIT"); bpy.ops.mesh.select_all(action="SELECT")
         bpy.ops.uv.cube_project(cube_size=1.0 if o.data.materials[0].name != "galv_grating" else 0.5)
         bpy.ops.object.mode_set(mode="OBJECT"); o.select_set(False)
+
+# ---------- web export: one bay_static mesh, excluding preview-only context ----------
+if "--export" in args:
+    path = os.path.abspath(args[args.index("--export") + 1])
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    for img in bpy.data.images:
+        if img.size[0] > 512 or img.size[1] > 512:
+            scale = 512 / max(img.size[0], img.size[1])
+            img.scale(max(1, round(img.size[0] * scale)), max(1, round(img.size[1] * scale)))
+    # simplified copy for the twelve neighbouring bays: no valves, flanges or bevels, fewer sides on round parts
+    LITE = bpy.data.collections.new("bay_lite"); scn.collection.children.link(LITE)
+    box(14.5, 0.04, 1.5, MAT["lane"], (-0.6, 0.02, -2.2), bevel=0.0, col=LITE)
+    box(16.6, 0.16, 1.9, MAT["island"], (0.45, 0.08, -3.9), bevel=0.02, col=LITE)
+    box(7.2, 0.035, 1.1, MAT["grate"], (1.0, 3.0, -4.25), bevel=0.0, col=LITE)
+    for z in (-4.78, -3.72):
+        box(7.2, 0.16, 0.08, MAT["frame"], (1.0, 2.89, z), bevel=0.0, col=LITE)
+        box(7.2, 0.12, 0.012, MAT["yellow"], (1.0, 3.09, z), bevel=0.0, col=LITE)
+        cyl(0.025, 7.2, MAT["yellow"], (1.0, 4.05, z), axis="x", seg=8, col=LITE)
+        cyl(0.02, 7.2, MAT["yellow"], (1.0, 3.55, z), axis="x", seg=6, col=LITE)
+        for x in [-2.6 + 1.2 * i for i in range(7)]: cyl(0.022, 1.05, MAT["yellow"], (x, 3.53, z), seg=6, col=LITE)
+    for x in (-2.5, 1.0, 4.5):
+        for z in (-4.75, -3.75): box(0.1, 3.0, 0.1, MAT["frame"], (x, 1.5, z), bevel=0.0, col=LITE)
+    Ls, angs = math.hypot(3.4, 3.0), math.atan2(3.0, 3.4)
+    for z in (-4.72, -3.78):
+        box(Ls, 0.18, 0.012, MAT["frame"], (-4.3, 1.5, z), rz=angs, bevel=0.0, col=LITE)
+        cyl(0.022, Ls, MAT["yellow"], (-4.3, 2.5, z), rz=angs - math.pi / 2, seg=6, col=LITE)
+    for i in range(1, 12): box(0.26, 0.03, 0.9, MAT["grate"], (-6.0 + 3.4 * i / 12, 3.0 * i / 12, -4.25), bevel=0.0, col=LITE)
+    cyl(0.13, 9, MAT["pipe"], (0.4, 0.55, -4.3), axis="x", seg=12, col=LITE)
+    for o in LITE.objects:
+        if o.data.materials[0].name in ("island_paint", "lane_concrete", "galv_grating"):
+            bpy.ops.object.select_all(action="DESELECT"); bpy.context.view_layer.objects.active = o; o.select_set(True)
+            bpy.ops.object.mode_set(mode="EDIT"); bpy.ops.mesh.select_all(action="SELECT")
+            bpy.ops.uv.cube_project(cube_size=1.0 if o.data.materials[0].name != "galv_grating" else 0.5)
+            bpy.ops.object.mode_set(mode="OBJECT")
+    def merge(objs, name):
+        bpy.ops.object.select_all(action="DESELECT")
+        for ob in objs: ob.select_set(True)
+        bpy.context.view_layer.objects.active = objs[0]
+        bpy.ops.object.convert(target="MESH")             # applies bevels and other modifiers
+        bpy.ops.object.join(); ob = bpy.context.object; ob.name = name; ob.data.name = name
+        bpy.ops.object.transform_apply(location=True, rotation=True, scale=True)  # site-frame vertices, origin node
+        return ob
+    o = merge(list(COL.objects), "bay_static")
+    lite = merge(list(LITE.objects), "bay_lite")
+    faces = (len(o.data.polygons), len(lite.data.polygons))
+    bpy.ops.object.select_all(action="DESELECT"); o.select_set(True); lite.select_set(True)
+    bpy.context.view_layer.objects.active = o
+    bpy.ops.export_scene.gltf(filepath=path, export_format="GLB", use_selection=True, export_apply=True, export_yup=True,
+                              export_cameras=False, export_lights=False, export_animations=False,
+                              export_draco_mesh_compression_enable=True, export_draco_mesh_compression_level=7,
+                              export_draco_position_quantization=14, export_draco_normal_quantization=10)
+    print("EXPORTED", path, faces)
 
 # ---------- light: overcast HDRI + the page's sun ----------
 w = bpy.data.worlds.new("sky"); scn.world = w; w.use_nodes = True
