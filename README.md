@@ -13,7 +13,8 @@
 | `app.js` | 로그인, 교육·시험 진행, 관리자 화면 |
 | `questions.js` | 단계별 설명과 시험 오답·이유 (검토 후 수정) |
 | `app.css` | 화면 스타일 |
-| `tex/` | 하늘·콘크리트 등 텍스처 (Poly Haven, CC0), 기사 동작 `driver.glb` (Adobe Mixamo 뼈대·동작, Mixamo 이용 조건에 따라 사용) |
+| `tex/` | 하늘·콘크리트 등 텍스처 (Poly Haven, CC0), 기사 동작 `driver.glb` (Adobe Mixamo 뼈대·동작, Mixamo 이용 조건에 따라 사용), 유조차 `tanker.glb` (자체 제작, `blender/build_tanker.py`로 생성) |
+| `blender/` | 3D 모델을 만드는 블렌더 스크립트. 블렌더 5.3에서 `blender -b -P blender/build_tanker.py -- --export tex/tanker.glb`로 다시 만든다. 조명용 HDRI는 Poly Haven `overcast_industrial_courtyard`(CC0)를 `blender/assets/`에 받아 쓴다(git 제외) |
 
 회원 정보와 기록은 Supabase(서울 리전) 데이터베이스에 저장됩니다. 테이블은 외부에서 직접 읽을 수 없고, 모든 동작은 세션과 권한을 검사하는 함수로만 처리합니다. 페이지에 들어 있는 키는 공개용(publishable) 키입니다.
 
